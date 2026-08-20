@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NotificationServiceImplTest {
 
@@ -18,7 +19,7 @@ class NotificationServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new NotificationServiceImpl("tesseract", "tessdata", "tur+eng", null);
+        service = new NotificationServiceImpl("tesseract", "tessdata", "tur", "tur+eng", 300, null);
     }
 
     @Test
@@ -75,5 +76,32 @@ class NotificationServiceImplTest {
 
         assertNotNull(response.finalAcceptanceDate());
         assertEquals(LocalDate.of(2026, 12, 1), response.finalAcceptanceDate().date());
+    }
+
+    @Test
+    void repairTurkishTextRestoresTurkishDiacritics() {
+        String ocrLikeText = "Sozlesme tarihi 15.03.2025. Mudurlugune bildirim yapilacaktir. "
+                + "Gecici kabul 30.06.2025 gunu. Isin suresi 90 gun. Yururluge giris 1 Subat 2025.";
+
+        String repaired = service.repairTurkishText(ocrLikeText);
+
+        assertTrue(repaired.contains("Sözleşme"), "sozlesme -> sözleşme");
+        assertTrue(repaired.contains("Müdürlüğüne"), "mudurlugune -> müdürlüğüne");
+        assertTrue(repaired.contains("yapılacaktır"), "yapilacaktir -> yapılacaktır");
+        assertTrue(repaired.contains("Geçici"), "gecici -> geçici (büyük harf korunur)");
+        assertTrue(repaired.contains("günü"), "gunu -> günü");
+        assertTrue(repaired.contains("süresi"), "suresi -> süresi");
+        assertTrue(repaired.contains("Yürürlüğe"), "yururluge -> yürürlüğe");
+        assertTrue(repaired.contains("Şubat"), "subat -> şubat");
+        assertFalse(repaired.contains("Sozlesme"), "aksansız hali kalmamalı");
+    }
+
+    @Test
+    void repairTurkishTextKeepsUnlistedWordsUntouched() {
+        String text = "Herhangi bilinmeyen kelimeler aynen kalir. 12345";
+
+        String repaired = service.repairTurkishText(text);
+
+        assertEquals(text, repaired);
     }
 }

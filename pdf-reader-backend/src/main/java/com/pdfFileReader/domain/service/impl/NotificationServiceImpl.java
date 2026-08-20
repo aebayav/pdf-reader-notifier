@@ -20,8 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -72,20 +70,85 @@ public class NotificationServiceImpl implements NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationServiceImpl.class);
 
+    /**
+     * OCR'un aksan isaretlerini dusurdugu yaygin sozlesme terimleri.
+     * Sadece tam kelime eslesmeleri duzeltilir (kelime siniri korumali).
+     */
+    private static final Map<String, String> TURKISH_REPAIR_WORDS = Map.ofEntries(
+            Map.entry("sozlesme", "sözleşme"),
+            Map.entry("sozlesmesi", "sözleşmesi"),
+            Map.entry("sozlesmenin", "sözleşmenin"),
+            Map.entry("sozlesmeler", "sözleşmeler"),
+            Map.entry("mudurluk", "müdürlük"),
+            Map.entry("mudurlugu", "müdürlüğü"),
+            Map.entry("mudurlugune", "müdürlüğüne"),
+            Map.entry("mudurlukleri", "müdürlükleri"),
+            Map.entry("gunluk", "günlük"),
+            Map.entry("gun", "gün"),
+            Map.entry("gunu", "günü"),
+            Map.entry("gunler", "günler"),
+            Map.entry("gunun", "günün"),
+            Map.entry("sure", "süre"),
+            Map.entry("suresi", "süresi"),
+            Map.entry("sureyi", "süreyi"),
+            Map.entry("surenin", "sürenin"),
+            Map.entry("yuzde", "yüzde"),
+            Map.entry("yil", "yıl"),
+            Map.entry("yillik", "yıllık"),
+            Map.entry("yilinda", "yılında"),
+            Map.entry("odeme", "ödeme"),
+            Map.entry("odemeler", "ödemeler"),
+            Map.entry("odemenin", "ödemenin"),
+            Map.entry("gecici", "geçici"),
+            Map.entry("baslangic", "başlangıç"),
+            Map.entry("yururluk", "yürürlük"),
+            Map.entry("yururluge", "yürürlüğe"),
+            Map.entry("yapilacak", "yapılacak"),
+            Map.entry("yapilacaktir", "yapılacaktır"),
+            Map.entry("olacaktir", "olacaktır"),
+            Map.entry("tutari", "tutarı"),
+            Map.entry("tutarinda", "tutarında"),
+            Map.entry("isbu", "işbu"),
+            Map.entry("isin", "işin"),
+            Map.entry("isleri", "işleri"),
+            Map.entry("isveren", "işveren"),
+            Map.entry("hukum", "hüküm"),
+            Map.entry("hukumleri", "hükümleri"),
+            Map.entry("imzalanmis", "imzalanmış"),
+            Map.entry("tamamlanmis", "tamamlanmış"),
+            Map.entry("asagida", "aşağıda"),
+            Map.entry("yukarida", "yukarıda"),
+            Map.entry("subat", "şubat"),
+            Map.entry("mayis", "mayıs"),
+            Map.entry("kasim", "kasım"),
+            Map.entry("aralik", "aralık"),
+            Map.entry("eylul", "eylül"),
+            Map.entry("agustos", "ağustos")
+    );
+    private static final Pattern TURKISH_REPAIR_PATTERN = Pattern.compile(
+            "(?iu)\\b(" + String.join("|", TURKISH_REPAIR_WORDS.keySet()) + ")\\b"
+    );
+
     private final String ocrExecutable;
     private final String ocrDatapath;
-    private final String ocrLanguage;
+    private final String ocrPrimaryLanguage;
+    private final String ocrFallbackLanguage;
+    private final int ocrDpi;
     private final NotificationRepository notificationRepository;
 
     public NotificationServiceImpl(
             @Value("${app.ocr.executable:C:\\Program Files\\Tesseract-OCR\\tesseract.exe}") String ocrExecutable,
             @Value("${app.ocr.datapath:C:\\Program Files\\Tesseract-OCR\\tessdata}") String ocrDatapath,
-            @Value("${app.ocr.language:tur+eng}") String ocrLanguage,
+            @Value("${app.ocr.primary-language:tur}") String ocrPrimaryLanguage,
+            @Value("${app.ocr.fallback-language:tur+eng}") String ocrFallbackLanguage,
+            @Value("${app.ocr.dpi:300}") int ocrDpi,
             NotificationRepository notificationRepository
     ) {
         this.ocrExecutable = ocrExecutable;
         this.ocrDatapath = ocrDatapath;
-        this.ocrLanguage = ocrLanguage;
+        this.ocrPrimaryLanguage = ocrPrimaryLanguage;
+        this.ocrFallbackLanguage = ocrFallbackLanguage;
+        this.ocrDpi = ocrDpi;
         this.notificationRepository = notificationRepository;
     }
 
@@ -402,17 +465,18 @@ public class NotificationServiceImpl implements NotificationService {
             StringBuilder text = new StringBuilder();
 
             for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
-                BufferedImage image = renderer.renderImageWithDPI(pageIndex, 200, ImageType.RGB);
-                BufferedImage rgbImage = convertToRgbImage(image);
+                // 300 DPI gri tonlama: Turkce aksanlarin dogru taninmasi icin.
+                // Ek ikilestirme (Otsu vb.) yapilmaz; Tesseract 5 LSTM dahili esikleme
+                // uygular ve on-ikilestirme ince isaretleri (%, ., virgul) bozar.
+                BufferedImage grayImage = renderer.renderImageWithDPI(pageIndex, ocrDpi, ImageType.GRAY);
 
-                String pageText = doOcrFromImageFile(rgbImage, pageIndex);
+                String pageText = ocrPageWithFallback(grayImage, pageIndex);
 
                 text.append(pageText).append(System.lineSeparator());
-                image.flush();
-                rgbImage.flush();
+                grayImage.flush();
             }
 
-            return text.toString();
+            return repairTurkishText(text.toString());
         } catch (IOException e) {
             throw new PdfReadException("PDF pages could not be rendered for OCR.", e);
         } catch (InterruptedException e) {
@@ -425,9 +489,45 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
-    private String doOcrFromImageFile(BufferedImage image, int pageIndex)
+    /**
+     * Once birincil dil ile OCR dener; komut basarisiz olursa ya da sonuc
+     * dusuk kaliteyse yedek dili dener ve harf sayisi fazla olani secer.
+     */
+    private String ocrPageWithFallback(BufferedImage image, int pageIndex)
+            throws IOException, InterruptedException {
+        String primaryText;
+        try {
+            primaryText = doOcrFromImageFile(image, pageIndex, ocrPrimaryLanguage);
+        } catch (PdfReadException primaryFailure) {
+            log.warn("Birincil OCR dili ({}) basarisiz: {}", ocrPrimaryLanguage, primaryFailure.getMessage());
+            primaryText = null;
+        }
+
+        if (ocrFallbackLanguage.equalsIgnoreCase(ocrPrimaryLanguage)) {
+            if (primaryText == null) {
+                throw new PdfReadException("OCR could not read any text.");
+            }
+            return primaryText;
+        }
+
+        if (primaryText == null || isTextLowQuality(primaryText)) {
+            log.info("Yedek OCR dili deneniyor: {}", ocrFallbackLanguage);
+            String fallbackText = doOcrFromImageFile(image, pageIndex, ocrFallbackLanguage);
+
+            if (primaryText == null || countLetters(fallbackText) > countLetters(primaryText)) {
+                return fallbackText;
+            }
+        }
+
+        return primaryText;
+    }
+
+    private String doOcrFromImageFile(BufferedImage image, int pageIndex, String language)
             throws IOException, InterruptedException {
         Path tempImage = Files.createTempFile("pdf-ocr-page-" + pageIndex + "-", ".png");
+        // Cikti taban ismi .txt ile bitmemeli; tesseract zaten .txt uzantisi ekler.
+        Path outputBase = Files.createTempFile("pdf-ocr-out-" + pageIndex + "-", "");
+        Path outputFile = Path.of(outputBase + ".txt");
 
         try {
             boolean imageWritten = ImageIO.write(image, "png", tempImage.toFile());
@@ -438,9 +538,11 @@ public class NotificationServiceImpl implements NotificationService {
             List<String> command = new ArrayList<>();
             command.add(ocrExecutable);
             command.add(tempImage.toString());
-            command.add("stdout");
+            command.add(outputBase.toString());
             command.add("-l");
-            command.add(ocrLanguage);
+            command.add(language);
+            command.add("-c");
+            command.add("preserve_interword_spaces=1");
 
             if (ocrDatapath != null && !ocrDatapath.isBlank()) {
                 command.add("--tessdata-dir");
@@ -448,7 +550,6 @@ public class NotificationServiceImpl implements NotificationService {
             }
 
             Process process = new ProcessBuilder(command).start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             String error = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             int exitCode = process.waitFor();
 
@@ -460,26 +561,36 @@ public class NotificationServiceImpl implements NotificationService {
                 log.warn("Tesseract stderr: {}", error.trim());
             }
 
-            return output;
+            // Dosya ciktisi her zaman UTF-8'dir. stdout Windows'ta konsol kod sayfasina
+            // (CP1254 vb.) takilabildigi icin dosya ciktisi tercih edilir.
+            return Files.readString(outputFile);
         } finally {
             Files.deleteIfExists(tempImage);
+            Files.deleteIfExists(outputBase);
+            Files.deleteIfExists(outputFile);
         }
     }
 
-    private BufferedImage convertToRgbImage(BufferedImage source) {
-        BufferedImage rgbImage = new BufferedImage(
-                source.getWidth(),
-                source.getHeight(),
-                BufferedImage.TYPE_INT_RGB
-        );
+    /**
+     * OCR ciktisinda aksanlari dusen yaygin sozlesme terimlerini duzeltir.
+     */
+    String repairTurkishText(String text) {
+        Matcher matcher = TURKISH_REPAIR_PATTERN.matcher(text);
+        StringBuilder repaired = new StringBuilder();
 
-        Graphics2D graphics = rgbImage.createGraphics();
-        graphics.setColor(Color.WHITE);
-        graphics.fillRect(0, 0, rgbImage.getWidth(), rgbImage.getHeight());
-        graphics.drawImage(source, 0, 0, null);
-        graphics.dispose();
+        while (matcher.find()) {
+            String matched = matcher.group(1);
+            String replacement = TURKISH_REPAIR_WORDS.get(normalize(matched.toLowerCase(TURKISH)));
 
-        return rgbImage;
+            if (Character.isUpperCase(matched.charAt(0))) {
+                replacement = replacement.substring(0, 1).toUpperCase(TURKISH) + replacement.substring(1);
+            }
+
+            matcher.appendReplacement(repaired, Matcher.quoteReplacement(replacement));
+        }
+
+        matcher.appendTail(repaired);
+        return repaired.toString();
     }
 
     private boolean isTextLowQuality(String text) {
