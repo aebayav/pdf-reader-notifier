@@ -1,10 +1,15 @@
 import {useRef, ChangeEvent, useState} from "react";
 
-const FileUploader = () => {
+interface FileUploaderProps {
+    onUpload: (file: File) => void | Promise<void>;
+    loading?: boolean;
+}
+
+const FileUploader = ({ onUpload, loading = false }: FileUploaderProps) => {
     const uploadRef = useRef<HTMLInputElement>(null)
     const [uploadedFile, setUploadedFile] = useState<string | null>(null)
-    
-    const handleUpload = (e: ChangeEvent<HTMLInputElement>) =>{
+
+    const handleUpload = (e: ChangeEvent<HTMLInputElement>) => {
         if(e.target.files === null){
             return
         }
@@ -15,29 +20,25 @@ const FileUploader = () => {
                 alert("Lütfen bir .pdf dosyası yükleyin")
                 return
             }
-            
+
             setUploadedFile(file.name)
-            
-            const fileReader = new FileReader()
-            fileReader.onload = (event) => {
-                const contents = event?.target?.result
-                console.log(URL.createObjectURL(file))
-                console.log(contents)
-                //Burada backende OCR için dosya yollanacak şimdilik boş.
-            }
+            onUpload(file)
             e.target.value = ''
-            fileReader.readAsArrayBuffer(file)
         }
         else{
             alert("Dosya yüklenemedi lütfen tekrar deneyin")
         }
     }
-    
+
     return(
         <div className="file-uploader-container">
             <div>
-                <button className="file-upload-button" onClick={() => uploadRef.current?.click()}>
-                    Upload PDF
+                <button
+                    className="file-upload-button"
+                    onClick={() => uploadRef.current?.click()}
+                    disabled={loading}
+                >
+                    {loading ? "Yükleniyor..." : "Upload PDF"}
                 </button>
                 <input
                     type="file"
