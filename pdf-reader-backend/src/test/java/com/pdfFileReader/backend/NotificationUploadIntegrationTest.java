@@ -15,6 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Transactional
@@ -29,9 +30,9 @@ class NotificationUploadIntegrationTest {
     @Test
     void uploadSavesNotificationsToDatabase() throws Exception {
         MockMultipartFile pdf = TestPdfFactory.createPdf("bildirim.pdf",
-                "1. ihale bildirimi 12.02.2026",
-                "2. kesin hesap bildirimi 28.05.2026",
-                "Bu bildirim surecinde taraflarin tum yukumlulukleri ilgili mevzuat hukumlerine gore degerlendirilecektir."
+                "1. test ihale bildirimi 14.03.2026",
+                "2. test kesin hesap bildirimi 19.06.2026",
+                "Bu test bildirim surecinde taraflarin tum yukumlulukleri ilgili mevzuat hukumlerine gore degerlendirilecektir."
         );
 
         long before = notificationRepository.count();
@@ -45,6 +46,26 @@ class NotificationUploadIntegrationTest {
         for (Notification notification : saved) {
             assertNotNull(notification.getId(), "kaydedilen bildirime ID atanmadi");
             assertEquals("IN_PROGRESS", notification.getStatus().name());
+            assertNotNull(notification.getDescription(), "paragraf aciklamasi yazilmali");
         }
+    }
+
+    @Test
+    void uploadingSamePdfTwiceDoesNotDuplicate() throws Exception {
+        MockMultipartFile pdf = TestPdfFactory.createPdf("bildirim.pdf",
+                "1. test ihale bildirimi 14.03.2026",
+                "2. test kesin hesap bildirimi 19.06.2026",
+                "Bu test bildirim surecinde taraflarin tum yukumlulukleri ilgili mevzuat hukumlerine gore degerlendirilecektir."
+        );
+
+        List<Notification> first = notificationService.processAndSaveNotifications(pdf);
+        assertFalse(first.isEmpty(), "ilk yukleme kayit uretmeli");
+
+        long countAfterFirst = notificationRepository.count();
+
+        List<Notification> second = notificationService.processAndSaveNotifications(pdf);
+
+        assertTrue(second.isEmpty(), "ikinci yukleme mükerrer kayit uretmemeli, uretilen: " + second);
+        assertEquals(countAfterFirst, notificationRepository.count(), "duplicate kayit eklendi");
     }
 }

@@ -1,16 +1,20 @@
 package com.pdfFileReader.domain.service.impl;
 
 import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
+import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.testutil.TestPdfFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NotificationServiceImplTest {
@@ -103,5 +107,80 @@ class NotificationServiceImplTest {
         String repaired = service.repairTurkishText(text);
 
         assertEquals(text, repaired);
+    }
+
+    @Test
+    void extractNotificationsIgnoresSectionNumbersAndCableSpecs() {
+        String text = String.join("\n",
+                "3.2.1.10.5. Yüklenici, İş'in ifasının tamamlanmasına kadar Saha'da HSE",
+                "x150 8/35 mm2 20.3/35 kV Dahili AYE3SV,Kab.Bağl.-AL",
+                "3.2.1.11. İşçilik, malzeme, ekipman, araç, makine, vinç, yakıt, yağ, sarf malzemesi,",
+                "x150 5/35 mm2 20.3/35 kV Harici AYESSV, Kab. Başl.-AL | AD. [12,00]"
+        ) + "\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        assertTrue(notifications.isEmpty(),
+                "numara/spec satirlari bildirim uretmemeli, uretilen: " + notifications);
+    }
+
+    @Test
+    void extractNotificationsKeepsRealDatesInNoisyText() {
+        String text = String.join("\n",
+                "14. İşbu Protokol 20.10.2025 tarihinde Taraflar'ın karşılıklı ve birbirine uygun",
+                "akdetmişlerdir. İşbu Protokol tahtında Taraflar, aşağıda yer alan şartların aralarında 20.10.2025",
+                "Tarih : 20.10.2025",
+                "Sözleşme tarihi: 20.10.2025.",
+                "15/10/2025 tarihli"
+        ) + "\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        assertFalse(notifications.isEmpty(), "gercek tarihler bulunamadi");
+
+        Set<LocalDate> distinctDates = notifications.stream()
+                .map(Notification::getDueDate)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(LocalDate.of(2025, 10, 20), LocalDate.of(2025, 10, 15)),
+                distinctDates, "yanlis tarih seti cikarildi: " + notifications);
+    }
+
+    @Test
+    void extractNotificationsBuildsDescriptionFromParagraph() {
+        String text = String.join("\n",
+                "Yüklenici iş programına göre çalışacaktır ve",
+                "işi 31.05.2025 tarihinde tamamlayacaktır.",
+                "",
+                "Tek satırlık paragraf 30.09.2025."
+        ) + "\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        Notification paragraphNote = notifications.stream()
+                .filter(n -> n.getDueDate().equals(LocalDate.of(2025, 5, 31)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("paragraf bildirimi bulunamadi: " + notifications));
+
+        assertEquals(
+                "Yüklenici iş programına göre çalışacaktır ve işi 31.05.2025 tarihinde tamamlayacaktır.",
+                paragraphNote.getDescription(),
+                "paragraf basligi aciklama olarak yazilmali"
+        );
+
+        Notification singleLineNote = notifications.stream()
+                .filter(n -> n.getDueDate().equals(LocalDate.of(2025, 9, 30)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("tek satir bildirimi bulunamadi: " + notifications));
+        assertNull(singleLineNote.getDescription(), "tek satirlik paragrafta aciklama olmamali");
+    }
+
+    @Test
+    void extractNotificationsAcceptsCommaAfterTurkishMonth() {
+        String text = "Kesin kabul 1 Aralik, 2026 tarihinde yapilacaktir.\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        assertEquals(1, notifications.size());
+        assertEquals(LocalDate.of(2026, 12, 1), notifications.get(0).getDueDate());
     }
 }

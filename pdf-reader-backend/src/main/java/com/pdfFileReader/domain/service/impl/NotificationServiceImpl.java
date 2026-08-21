@@ -40,11 +40,14 @@ import java.util.regex.Pattern;
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
+    // Gürültüye karşı sertleştirilmiş: bölüm numaraları (3.2.1.10.5) ve kablo
+    // spesifikasyonları (20.3/35) rakam/nokta bağlamında olduğu için elenir.
+    // Ayırıcı sonrasındaki OCR kaynaklı boşluklara tolerans vardır.
     private static final Pattern NUMERIC_DATE_PATTERN = Pattern.compile(
-            "(\\d{1,2})[.\\-/]+(\\d{1,2})[.\\-/]+(\\d{2,4})"
+            "(?<![\\d.])(\\d{1,2})[.\\-/]+\\s*(\\d{1,2})[.\\-/]+\\s*(\\d{2,4})(?!\\d)"
     );
     private static final Pattern TEXT_DATE_PATTERN = Pattern.compile(
-            "(\\d{1,2})\\s+(ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)\\s+(\\d{4})"
+            "(\\d{1,2})\\s+(ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)\\s*,?\\s*(\\d{4})"
     );
     private static final Pattern MONEY_PATTERN = Pattern.compile(
             "(?iu)(\\d{1,3}(?:[. ]\\d{3})*(?:,\\d{1,2})?|\\d+)(?:\\s)*(TL|TRY|USD|EUR|EURO|DOLAR|₺)"
@@ -161,7 +164,17 @@ public class NotificationServiceImpl implements NotificationService {
             log.warn("No date-bearing notifications found in '{}'", file.getOriginalFilename());
         }
 
-        return notificationRepository.saveAll(notifications);
+        // Aynı başlık + tarih kombinasyonu zaten kayıtlıysa mükerrer ekleme yapılmaz
+        List<Notification> newNotifications = new ArrayList<>();
+        for (Notification notification : notifications) {
+            if (notificationRepository.existsByTitleAndDueDate(notification.getTitle(), notification.getDueDate())) {
+                log.info("Zaten kayitli oldugu icin atlandi: {}", notification.getTitle());
+                continue;
+            }
+            newNotifications.add(notification);
+        }
+
+        return notificationRepository.saveAll(newNotifications);
     }
 
     @Override
@@ -224,7 +237,7 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
-    private List<Notification> extractNotificationsFromText(String text) {
+    List<Notification> extractNotificationsFromText(String text) {
         List<String> lines = Arrays.asList(text.split("\\R"));
         List<Notification> results = new ArrayList<>();
 
@@ -237,6 +250,7 @@ public class NotificationServiceImpl implements NotificationService {
             for (LocalDate date : extractDates(line, 2000, 2100)) {
                 Notification notification = new Notification();
                 notification.setTitle(buildNotificationTitle(lines, line, i));
+                notification.setDescription(buildNotificationDescription(lines, i));
                 notification.setDueDate(date);
                 notification.setStatus(Status.IN_PROGRESS);
                 results.add(notification);
@@ -244,6 +258,37 @@ public class NotificationServiceImpl implements NotificationService {
         }
 
         return results;
+    }
+
+    /**
+     * Bildirimin içeriği: tarih satırının ait olduğu paragraf (boş satırla ayrılan blok).
+     * Tek satırlık paragraflar için null döner (başlık yeterli).
+     */
+    private String buildNotificationDescription(List<String> lines, int index) {
+        int start = index;
+        while (start > 0 && !lines.get(start - 1).trim().isEmpty()) {
+            start--;
+        }
+
+        int end = index;
+        while (end < lines.size() - 1 && !lines.get(end + 1).trim().isEmpty()) {
+            end++;
+        }
+
+        if (start == end) {
+            return null;
+        }
+
+        StringBuilder paragraph = new StringBuilder();
+        for (int k = start; k <= end; k++) {
+            String part = lines.get(k).trim();
+            if (!part.isEmpty()) {
+                paragraph.append(part).append(' ');
+            }
+        }
+
+        String cleaned = paragraph.toString().trim();
+        return cleaned.length() > 600 ? cleaned.substring(0, 600) + "..." : cleaned;
     }
 
     private ExtractedDate findDateByKeywords(List<String> sections, List<String> keywords) {
@@ -391,6 +436,11 @@ public class NotificationServiceImpl implements NotificationService {
 
             if (year < 100) {
                 year += 2000;
+                // 2 haneli yıllar için makul olmayan geleceği eler
+                // (ör. "20.3/35 kV" kablo spesifikasyonundaki "35" -> 2035)
+                if (year > LocalDate.now().getYear() + 5) {
+                    return;
+                }
             }
 
             if (year < minYear || year > maxYear) {
