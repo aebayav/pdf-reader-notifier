@@ -593,6 +593,10 @@ public class NotificationServiceImpl implements NotificationService {
             command.add(language);
             command.add("-c");
             command.add("preserve_interword_spaces=1");
+            // Render DPI'ini acikca bildirir; aksi halde tesseract tahmin yurur
+            // ("Estimating resolution as ...") ve tahminin sapmasi tanima kalitesini bozar.
+            command.add("-c");
+            command.add("user_defined_dpi=" + ocrDpi);
 
             if (ocrDatapath != null && !ocrDatapath.isBlank()) {
                 command.add("--tessdata-dir");
@@ -608,7 +612,8 @@ public class NotificationServiceImpl implements NotificationService {
             }
 
             if (!error.isBlank()) {
-                log.warn("Tesseract stderr: {}", error.trim());
+                // Basarili islemde stderr bilgilendirme amacli; log gurultusu olmamasi icin debug
+                log.debug("Tesseract stderr: {}", error.trim());
             }
 
             // Dosya ciktisi her zaman UTF-8'dir. stdout Windows'ta konsol kod sayfasina
