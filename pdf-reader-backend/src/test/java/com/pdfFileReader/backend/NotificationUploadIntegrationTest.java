@@ -65,7 +65,28 @@ class NotificationUploadIntegrationTest {
 
         List<Notification> second = notificationService.processAndSaveNotifications(pdf);
 
-        assertTrue(second.isEmpty(), "ikinci yukleme mükerrer kayit uretmemeli, uretilen: " + second);
+        assertTrue(second.isEmpty(), "ayni belge ikinci kez islenmemeli, uretilen: " + second);
         assertEquals(countAfterFirst, notificationRepository.count(), "duplicate kayit eklendi");
+    }
+
+    @Test
+    void differentDocumentsWithSameLinesAreNotSkipped() throws Exception {
+        MockMultipartFile pdfA = TestPdfFactory.createPdf("a.pdf",
+                "Tarih : 20.10.2025",
+                "Bu birinci test belgesidir ve yalnizca mükerrer kontrolunun belge bazli calistigini dogrulamak icin olusturulmustur."
+        );
+        MockMultipartFile pdfB = TestPdfFactory.createPdf("b.pdf",
+                "Tarih : 20.10.2025",
+                "Bu ikinci test belgesidir ve farkli icerige sahip olmasina ragmen ilk belge ile ayni tarih satirini icerir."
+        );
+
+        List<Notification> first = notificationService.processAndSaveNotifications(pdfA);
+        assertFalse(first.isEmpty(), "ilk belge kayit uretmeli");
+
+        List<Notification> second = notificationService.processAndSaveNotifications(pdfB);
+
+        assertFalse(second.isEmpty(), "FARKLI belge ayni satiri icerse bile atlanmamali: " + second);
+        assertTrue(second.stream().anyMatch(n -> n.getTitle().startsWith("Tarih : 20.10.2025")),
+                "farkli belgenin tarih notu kaydedilmeli: " + second);
     }
 }

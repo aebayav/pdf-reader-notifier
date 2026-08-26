@@ -34,4 +34,8 @@ public class Notification {
 
     @Enumerated(EnumType.STRING) // Enum ismini (Örn: "COMPLETED") DB'ye yazar
     private Status status;
+
+    /** Kaynak belgenin icerik hash'i (mükerrer yükleme kontrolü için). */
+    @Column(name = "source_hash", length = 64)
+    private String sourceHash;
 }

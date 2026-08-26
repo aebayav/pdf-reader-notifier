@@ -166,12 +166,59 @@ class NotificationServiceImplTest {
                 paragraphNote.getDescription(),
                 "paragraf basligi aciklama olarak yazilmali"
         );
+        assertEquals("İş Programı", paragraphNote.getTitle(), "tamamlan/is programi etiketi kullanilmali");
 
         Notification singleLineNote = notifications.stream()
                 .filter(n -> n.getDueDate().equals(LocalDate.of(2025, 9, 30)))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("tek satir bildirimi bulunamadi: " + notifications));
-        assertNull(singleLineNote.getDescription(), "tek satirlik paragrafta aciklama olmamali");
+        assertEquals("Tek satırlık paragraf 30.09.2025.", singleLineNote.getDescription(),
+                "tek satirlik araligin aciklamasi satirin kendisi olmali");
+        assertEquals("Tek satırlık paragraf 30.09.2025.", singleLineNote.getTitle(), "tek satirlik paragrafta baslik satirin kendisi olmali");
+    }
+
+    @Test
+    void extractNotificationsMergesSameParagraphDateIntoSingleNote() {
+        String text = String.join("\n",
+                "14. Isbu Protokol 20.10.2025 tarihinde Taraflarin karsilikli irade beyanlari ile",
+                "akdetmislerdir. Isbu Protokol tahtinda Taraflar, asagida yer alan sartlarin aralarinda 20.10.2025",
+                "tarihinde akdedilmistir."
+        ) + "\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        assertEquals(1, notifications.size(), "aynı paragraftaki aynı tarih TEK not üretmeli: " + notifications);
+        Notification note = notifications.get(0);
+        assertEquals(LocalDate.of(2025, 10, 20), note.getDueDate());
+        assertTrue(note.getTitle().startsWith("14. Isbu Protokol 20.10.2025 tarihinde Taraflarin"),
+                "baslik paragrafin ilk cumlesinden baslamali: " + note.getTitle());
+        assertTrue(note.getDescription().contains("tarihinde akdedilmistir."),
+                "aciklama tum paragrafi icermeli: " + note.getDescription());
+    }
+
+    @Test
+    void extractNotificationsUsesSemanticLabelsForTitles() {
+        String text = String.join("\n",
+                "Sozlesme tarihi 15.03.2025 olarak belirlenmistir.",
+                "",
+                "Kesin kabul islemleri 30.09.2025 tarihinde tamamlanacaktir.",
+                "",
+                "Gecikme cezasi gunluk %0,1 olarak uygulanir."
+        ) + "\n";
+
+        List<Notification> notifications = service.extractNotificationsFromText(text);
+
+        assertEquals(2, notifications.size(), "ceza paragrafinda tarih olmadigi icin 2 not olmali: " + notifications);
+
+        Notification contractNote = notifications.stream()
+                .filter(n -> n.getDueDate().equals(LocalDate.of(2025, 3, 15)))
+                .findFirst().orElseThrow();
+        assertEquals("Sözleşme Tarihi", contractNote.getTitle());
+
+        Notification acceptanceNote = notifications.stream()
+                .filter(n -> n.getDueDate().equals(LocalDate.of(2025, 9, 30)))
+                .findFirst().orElseThrow();
+        assertEquals("Kesin Kabul", acceptanceNote.getTitle());
     }
 
     @Test

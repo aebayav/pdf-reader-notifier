@@ -25,10 +25,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -132,6 +135,25 @@ public class NotificationServiceImpl implements NotificationService {
             "(?iu)\\b(" + String.join("|", TURKISH_REPAIR_WORDS.keySet()) + ")\\b"
     );
 
+    /**
+     * Başlık kuralları: paragrafta ilk eşleşen anahtar kelime grubunun
+     * etiketi başlık olur. Sıra önemlidir (özel etiketler önce gelir).
+     */
+    private static final List<LabelRule> TITLE_LABELS = List.of(
+            new LabelRule("Sözleşme Tarihi", List.of("sozlesme tarihi", "sozlesme imza", "imza tarihi", "tanzim tarihi")),
+            new LabelRule("Başlangıç Tarihi", List.of("baslangic tarihi", "baslama tarihi", "ise baslama", "is baslama", "yururluk tarihi", "yururluge giris")),
+            new LabelRule("Yer Teslimi", List.of("yer teslim")),
+            new LabelRule("Geçici Kabul", List.of("gecici kabul")),
+            new LabelRule("Kesin Kabul", List.of("kesin kabul")),
+            new LabelRule("Ceza / Müeyyide", List.of("gecikme cezasi", "cezai", "ceza", "mueyyide", "kesinti", "teminat irat")),
+            new LabelRule("Birim Fiyat", List.of("birim fiyat", "birim bedel", "fiyat farki")),
+            new LabelRule("Ödeme", List.of("odeme")),
+            new LabelRule("İş Programı", List.of("is programi", "tamamlan", "kilometre tasi", "termin", "ilerleme", "bitiril"))
+    );
+
+    private record LabelRule(String label, List<String> keywords) {
+    }
+
     private final String ocrExecutable;
     private final String ocrDatapath;
     private final String ocrPrimaryLanguage;
@@ -158,23 +180,42 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public List<Notification> processAndSaveNotifications(MultipartFile file) {
         ExtractedTextResult extractedText = extractReadableText(file);
+
+        // Belge bazli mükerrer kontrolu: ayni icerik hash'i daha once islendiyse
+        // hicbir not tekrar eklenmez (satir/etiket bazli kontrol farkli
+        // sozlesmelerdeki ayni satirlari yanlislikla atlardi).
+        String sourceHash = hashOf(extractedText.text());
+        if (notificationRepository.existsBySourceHash(sourceHash)) {
+            log.info("Bu belge daha once islenmis, atlandi: {}", file.getOriginalFilename());
+            return List.of();
+        }
+
         List<Notification> notifications = extractNotificationsFromText(extractedText.text());
 
         if (notifications.isEmpty()) {
             log.warn("No date-bearing notifications found in '{}'", file.getOriginalFilename());
         }
 
-        // Aynı başlık + tarih kombinasyonu zaten kayıtlıysa mükerrer ekleme yapılmaz
-        List<Notification> newNotifications = new ArrayList<>();
         for (Notification notification : notifications) {
-            if (notificationRepository.existsByTitleAndDueDate(notification.getTitle(), notification.getDueDate())) {
-                log.info("Zaten kayitli oldugu icin atlandi: {}", notification.getTitle());
-                continue;
-            }
-            newNotifications.add(notification);
+            notification.setSourceHash(sourceHash);
         }
 
-        return notificationRepository.saveAll(newNotifications);
+        return notificationRepository.saveAll(notifications);
+    }
+
+    private String hashOf(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 kullanilamadi", e);
+        }
     }
 
     @Override
@@ -240,6 +281,7 @@ public class NotificationServiceImpl implements NotificationService {
     List<Notification> extractNotificationsFromText(String text) {
         List<String> lines = Arrays.asList(text.split("\\R"));
         List<Notification> results = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
@@ -248,9 +290,22 @@ public class NotificationServiceImpl implements NotificationService {
             }
 
             for (LocalDate date : extractDates(line, 2000, 2100)) {
+                int start = spanStart(lines, i);
+                int end = spanEnd(lines, i);
+                String spanText = joinSpan(lines, start, end);
+                String description = trimDescription(spanText);
+
+                // Ayni cumle/paragraf araligi + ayni tarih icin TEK not uretilir.
+                // PDF satirlari cumle ortasindan bolundugu icin eskiden
+                // her satirdan parca parca not olusuyordu.
+                String key = description + "|" + date;
+                if (!seenKeys.add(key)) {
+                    continue;
+                }
+
                 Notification notification = new Notification();
-                notification.setTitle(buildNotificationTitle(lines, line, i));
-                notification.setDescription(buildNotificationDescription(lines, i));
+                notification.setTitle(buildNotificationTitle(spanText));
+                notification.setDescription(description);
                 notification.setDueDate(date);
                 notification.setStatus(Status.IN_PROGRESS);
                 results.add(notification);
@@ -261,34 +316,53 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /**
-     * Bildirimin içeriği: tarih satırının ait olduğu paragraf (boş satırla ayrılan blok).
-     * Tek satırlık paragraflar için null döner (başlık yeterli).
+     * Tarih satirini kapsayan araligi bulur: satirlar cumle sonu noktalama
+     * isaretiyle bitene kadar birlestirilir. Bos satirlara guvenilmez cunku
+     * PDFBox/OCR ciktilarinda paragraf bosluklari her zaman korunmaz.
      */
-    private String buildNotificationDescription(List<String> lines, int index) {
+    private int spanStart(List<String> lines, int index) {
         int start = index;
-        while (start > 0 && !lines.get(start - 1).trim().isEmpty()) {
+        while (start > 0) {
+            String previous = lines.get(start - 1).trim();
+            if (previous.isEmpty() || endsSentence(previous)) {
+                break;
+            }
             start--;
         }
+        return start;
+    }
 
+    private int spanEnd(List<String> lines, int index) {
         int end = index;
-        while (end < lines.size() - 1 && !lines.get(end + 1).trim().isEmpty()) {
+        while (end < lines.size() - 1) {
+            String current = lines.get(end).trim();
+            String next = lines.get(end + 1).trim();
+            if (current.isEmpty() || endsSentence(current) || next.isEmpty()) {
+                break;
+            }
             end++;
         }
+        return end;
+    }
 
-        if (start == end) {
-            return null;
-        }
+    private boolean endsSentence(String line) {
+        char last = line.charAt(line.length() - 1);
+        return last == '.' || last == '!' || last == '?' || last == ';' || last == ':';
+    }
 
-        StringBuilder paragraph = new StringBuilder();
+    private String joinSpan(List<String> lines, int start, int end) {
+        StringBuilder span = new StringBuilder();
         for (int k = start; k <= end; k++) {
             String part = lines.get(k).trim();
             if (!part.isEmpty()) {
-                paragraph.append(part).append(' ');
+                span.append(part).append(' ');
             }
         }
+        return span.toString().trim();
+    }
 
-        String cleaned = paragraph.toString().trim();
-        return cleaned.length() > 600 ? cleaned.substring(0, 600) + "..." : cleaned;
+    private String trimDescription(String span) {
+        return span.length() > 600 ? span.substring(0, 600) + "..." : span;
     }
 
     private ExtractedDate findDateByKeywords(List<String> sections, List<String> keywords) {
@@ -394,13 +468,46 @@ public class NotificationServiceImpl implements NotificationService {
         return results;
     }
 
-    private String buildNotificationTitle(List<String> lines, String line, int index) {
-        String title = line.trim();
-        if (countLetters(title) < 5 && index > 0) {
-            title = lines.get(index - 1).trim() + " | " + title;
+    /**
+     * Başlık üretir: paragrafta bilinen bir anahtar kelime grubu varsa
+     * etiketini kullanır, yoksa paragrafın ilk anlamlı cümlesini (~90 karakter).
+     */
+    private String buildNotificationTitle(String paragraph) {
+        for (LabelRule rule : TITLE_LABELS) {
+            if (containsAny(paragraph, rule.keywords())) {
+                return rule.label();
+            }
         }
 
-        return title;
+        return firstSentence(paragraph);
+    }
+
+    private String firstSentence(String paragraph) {
+        String cleaned = cleanWhitespace(paragraph);
+        if (cleaned.length() <= 90) {
+            return cleaned;
+        }
+
+        // Cümle sonu adayı aranır; "14." gibi numaralandırma noktalarını
+        // atlamak için adayın en az 20 karakter sonra gelmesi gerekir.
+        int from = 0;
+        while (true) {
+            int dot = cleaned.indexOf(". ", from);
+            if (dot < 0 || dot > 90) {
+                break;
+            }
+            if (dot >= 20) {
+                return cleaned.substring(0, dot + 1);
+            }
+            from = dot + 2;
+        }
+
+        int comma = cleaned.indexOf(", ");
+        if (comma > 25 && comma <= 90) {
+            return cleaned.substring(0, comma) + "...";
+        }
+
+        return cleaned.substring(0, 90).trim() + "...";
     }
 
     private long countLetters(String value) {
