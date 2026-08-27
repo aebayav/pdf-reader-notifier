@@ -8,12 +8,13 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [useAi, setUseAi] = useState(true)
 
   const handleUpload = async (file: File) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await uploadPdf(file)
+      const result = await uploadPdf(file, useAi)
       setNotifications(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.")
@@ -25,7 +26,12 @@ function App() {
   return (
     <>
       <Header />
-      <FileUploader onUpload={handleUpload} loading={loading} />
+      <FileUploader
+        onUpload={handleUpload}
+        loading={loading}
+        useAi={useAi}
+        onAiChange={setUseAi}
+      />
       {error && <p className="upload-error">⚠ {error}</p>}
       <CardGallery notifications={notifications} />
     </>

@@ -3,9 +3,11 @@ import {useRef, ChangeEvent, useState} from "react";
 interface FileUploaderProps {
     onUpload: (file: File) => void | Promise<void>;
     loading?: boolean;
+    useAi: boolean;
+    onAiChange: (value: boolean) => void;
 }
 
-const FileUploader = ({ onUpload, loading = false }: FileUploaderProps) => {
+const FileUploader = ({ onUpload, loading = false, useAi, onAiChange }: FileUploaderProps) => {
     const uploadRef = useRef<HTMLInputElement>(null)
     const [uploadedFile, setUploadedFile] = useState<string | null>(null)
 
@@ -47,6 +49,17 @@ const FileUploader = ({ onUpload, loading = false }: FileUploaderProps) => {
                     onChange={handleUpload}
                     style={{display:"none"}}
                 />
+                <label
+                    className="ai-toggle"
+                    style={{display:"flex", alignItems:"center", gap:"8px", marginTop:"12px", cursor:"pointer"}}
+                >
+                    <input
+                        type="checkbox"
+                        checked={useAi}
+                        onChange={(e) => onAiChange(e.target.checked)}
+                    />
+                    <span className="text-white">AI ile analiz et (Gemini)</span>
+                </label>
             </div>
             {loading && (
                 <div className="loading-indicator" role="status" aria-live="polite">

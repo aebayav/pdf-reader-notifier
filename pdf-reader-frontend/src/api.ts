@@ -11,11 +11,15 @@ export interface Notification {
   status: NotificationStatus;
 }
 
-export async function uploadPdf(file: File): Promise<Notification[]> {
+export async function uploadPdf(file: File, useAi: boolean = false): Promise<Notification[]> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/upload`, {
+  const endpoint = useAi
+    ? `${API_BASE_URL}/api/v1/notifications/ai-upload`
+    : `${API_BASE_URL}/api/v1/notifications/upload`;
+
+  const response = await fetch(endpoint, {
     method: "POST",
     body: formData,
   });
