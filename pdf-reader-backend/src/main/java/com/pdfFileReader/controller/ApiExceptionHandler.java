@@ -1,6 +1,7 @@
 package com.pdfFileReader.controller;
 
 import com.pdfFileReader.exception.GeminiException;
+import com.pdfFileReader.exception.NotificationNotFoundException;
 import com.pdfFileReader.exception.PdfReadException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,13 @@ public class ApiExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_GATEWAY)
                 .body(new ApiError("GEMINI_FAILED", exception.getMessage()));
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ApiError> handleNotFoundException(NotificationNotFoundException exception) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("NOT_FOUND", exception.getMessage()));
     }
 
     public record ApiError(String code, String message) {

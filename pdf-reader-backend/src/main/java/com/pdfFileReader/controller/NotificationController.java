@@ -2,17 +2,24 @@ package com.pdfFileReader.controller;
 
 import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
 import com.pdfFileReader.domain.dto.ExtractedTextResponse;
+import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
 import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.domain.service.GeminiService;
 import com.pdfFileReader.domain.service.NotificationService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/notifications")
@@ -52,5 +59,25 @@ public class NotificationController {
         List<Notification> result = geminiService.analyzeAndCreateNotifications(file);
 
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Notification>> listNotifications() {
+        return ResponseEntity.ok(notificationService.findAll());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Notification> updateNotification(
+            @PathVariable UUID id,
+            @RequestBody UpdateNotificationRequest request
+    ) {
+        return ResponseEntity.ok(notificationService.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteNotification(@PathVariable UUID id) {
+        notificationService.delete(id);
+
+        return ResponseEntity.noContent().build();
     }
 }

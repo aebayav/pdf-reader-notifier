@@ -1,11 +1,13 @@
 import NotificationCard from './NotificationCard'
-import type { Notification } from '../api'
+import type { Notification, UpdateNotificationPayload } from '../api'
 
 interface CardGalleryProps {
   notifications: Notification[]
+  onUpdate: (id: string, payload: UpdateNotificationPayload) => void | Promise<void>
+  onDelete: (id: string) => void | Promise<void>
 }
 
-const CardGallery = ({ notifications }: CardGalleryProps) => {
+const CardGallery = ({ notifications, onUpdate, onDelete }: CardGalleryProps) => {
   if (notifications.length === 0) {
     return (
       <p className="gallery-empty">
@@ -25,6 +27,8 @@ const CardGallery = ({ notifications }: CardGalleryProps) => {
           dueDate={notification.dueDate ?? undefined}
           createDate={notification.createDate ?? undefined}
           status={notification.status}
+          onUpdate={onUpdate}
+          onDelete={onDelete}
         />
       ))}
     </div>

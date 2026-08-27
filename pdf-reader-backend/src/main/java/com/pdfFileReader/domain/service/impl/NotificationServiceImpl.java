@@ -3,9 +3,11 @@ package com.pdfFileReader.domain.service.impl;
 import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
 import com.pdfFileReader.domain.dto.ExtractedClause;
 import com.pdfFileReader.domain.dto.ExtractedDate;
+import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
 import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.domain.entity.Status;
 import com.pdfFileReader.domain.service.NotificationService;
+import com.pdfFileReader.exception.NotificationNotFoundException;
 import com.pdfFileReader.exception.PdfReadException;
 import com.pdfFileReader.repository.NotificationRepository;
 import com.pdfFileReader.util.HashUtil;
@@ -17,6 +19,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -36,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -758,5 +762,42 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     private record ExtractedTextResult(String text, String method) {
+    }
+
+    @Override
+    public List<Notification> findAll() {
+        return notificationRepository.findAll(Sort.by(Sort.Direction.ASC, "dueDate"));
+    }
+
+    @Override
+    public Notification update(UUID id, UpdateNotificationRequest request) {
+        Notification notification = notificationRepository.findById(id)
+                .orElseThrow(() -> new NotificationNotFoundException(id));
+
+        if (request.title() != null && !request.title().isBlank()) {
+            notification.setTitle(request.title().trim());
+        }
+        if (request.description() != null) {
+            notification.setDescription(request.description().isBlank() ? null : request.description().trim());
+        }
+        if (request.dueDate() != null) {
+            notification.setDueDate(request.dueDate());
+        }
+        if (request.status() != null) {
+            notification.setStatus(request.status());
+        }
+
+        log.info("Bildirim guncellendi: {}", id);
+        return notificationRepository.save(notification);
+    }
+
+    @Override
+    public void delete(UUID id) {
+        if (!notificationRepository.existsById(id)) {
+            throw new NotificationNotFoundException(id);
+        }
+
+        notificationRepository.deleteById(id);
+        log.info("Bildirim silindi: {}", id);
     }
 }
