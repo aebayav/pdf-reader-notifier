@@ -5,6 +5,7 @@ import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.exception.GeminiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -88,5 +89,28 @@ class GeminiServiceImplTest {
 
         assertEquals(1, notifications.size());
         assertNull(notifications.get(0).getDescription());
+    }
+
+    @Test
+    void readKeyFromEnvFileParsesGEMINI_API_KEY(@TempDir java.nio.file.Path tempDir) throws Exception {
+        java.nio.file.Path envFile = tempDir.resolve(".env");
+        java.nio.file.Files.writeString(envFile, """
+                # yorum satiri
+                GEMINI_API_KEY=test-key-123
+
+                """);
+
+        assertEquals("test-key-123", service.readKeyFromEnvFile(envFile));
+    }
+
+    @Test
+    void readKeyFromEnvFileHandlesMissingAndEmpty(@TempDir java.nio.file.Path tempDir) throws Exception {
+        assertEquals("", service.readKeyFromEnvFile(tempDir.resolve("yok.env")),
+                "olmayan dosya bos donmeli");
+
+        java.nio.file.Path envFile = tempDir.resolve("bos.env");
+        java.nio.file.Files.writeString(envFile, "BASKA_DEGISKEN=deger\n");
+        assertEquals("", service.readKeyFromEnvFile(envFile),
+                "GEMINI_API_KEY satiri yoksa bos donmeli");
     }
 }

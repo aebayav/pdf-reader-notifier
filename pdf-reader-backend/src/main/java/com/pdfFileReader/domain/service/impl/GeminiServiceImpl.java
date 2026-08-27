@@ -22,6 +22,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -68,8 +71,11 @@ public class GeminiServiceImpl implements GeminiService {
 
     @Override
     public List<Notification> analyzeAndCreateNotifications(MultipartFile file) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new GeminiException("Gemini API anahtari ayarlanmamis (app.gemini.api-key).");
+        String resolvedKey = resolveApiKey();
+        if (resolvedKey.isEmpty()) {
+            throw new GeminiException(
+                    "Gemini API anahtari bulunamadi. GEMINI_API_KEY ortam degiskeni ayarlayin "
+                            + "veya proje kok dizinine .env dosyasi ekleyin (GEMINI_API_KEY=...)");
         }
 
         String text = notificationService.extractText(file);
@@ -81,7 +87,7 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         String prompt = buildPrompt(text);
-        String jsonText = callGemini(prompt);
+        String jsonText = callGemini(resolvedKey, prompt);
         List<Notification> notifications = parseToNotifications(jsonText);
 
         if (notifications.isEmpty()) {
@@ -93,6 +99,49 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         return notificationRepository.saveAll(notifications);
+    }
+
+    /**
+     * Key'i soyle arar: ortam degiskeni (spring bunu zaten doldurur) ->
+     * user.dir'e gore ./.env ve ../.env dosyalari. Boylece backend
+     * IntelliJ'den, mvnw'den ya da run-backend.cmd'den baslatilsa da key bulunur.
+     */
+    String resolveApiKey() {
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey.trim();
+        }
+
+        for (Path candidate : List.of(Path.of(".env"), Path.of("../.env"))) {
+            Path envFile = candidate.toAbsolutePath().normalize();
+            String fromFile = readKeyFromEnvFile(envFile);
+            if (!fromFile.isEmpty()) {
+                log.info("Gemini API key .env dosyasindan okundu: {}", envFile);
+                return fromFile;
+            }
+        }
+
+        return "";
+    }
+
+    String readKeyFromEnvFile(Path envFile) {
+        try {
+            if (!Files.exists(envFile)) {
+                return "";
+            }
+
+            for (String line : Files.readAllLines(envFile, StandardCharsets.UTF_8)) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("GEMINI_API_KEY=")) {
+                    String value = trimmed.substring("GEMINI_API_KEY=".length()).trim();
+                    return value.isEmpty() ? "" : value;
+                }
+            }
+
+            return "";
+        } catch (IOException e) {
+            log.warn(".env dosyasi okunamadi: {}", envFile, e);
+            return "";
+        }
     }
 
     String buildPrompt(String text) {
@@ -117,9 +166,9 @@ public class GeminiServiceImpl implements GeminiService {
                 """.formatted(trimmed);
     }
 
-    String callGemini(String prompt) {
+    String callGemini(String key, String prompt) {
         try {
-            URI uri = URI.create(baseUrl + "/" + model + ":generateContent?key=" + apiKey);
+            URI uri = URI.create(baseUrl + "/" + model + ":generateContent?key=" + key);
 
             // Gemini REST govdesi: contents[].parts[].text + generationConfig
             Map<String, Object> payload = Map.of(
