@@ -9,6 +9,11 @@ REM ============================================================
 REM Java 26 (JDK) - sistemdeki diger java'larla karismasin diye net yol
 set "JAVA_HOME=C:\Program Files\Java\jdk-26"
 
+REM 0) Kok dizindeki .env dosyasini yukle (GEMINI_API_KEY vb.)
+if exist "%~dp0.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0.env") do set "%%A=%%B"
+)
+
 REM 1) Maven'i bul (mvnw tarafindan indirilmis dagitim; PATH'te olmasa da calisir)
 set "MVN="
 for /f "delims=" %%F in ('dir /s /b "%USERPROFILE%\.m2\wrapper\dists\mvn.cmd" 2^>nul') do if not defined MVN set "MVN=%%F"
