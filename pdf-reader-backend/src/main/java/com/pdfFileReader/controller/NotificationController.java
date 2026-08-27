@@ -3,6 +3,7 @@ package com.pdfFileReader.controller;
 import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
 import com.pdfFileReader.domain.dto.ExtractedTextResponse;
 import com.pdfFileReader.domain.entity.Notification;
+import com.pdfFileReader.domain.service.GeminiService;
 import com.pdfFileReader.domain.service.NotificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,9 +19,11 @@ import java.util.List;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final GeminiService geminiService;
 
-    public NotificationController(NotificationService notificationService) {
+    public NotificationController(NotificationService notificationService, GeminiService geminiService) {
         this.notificationService = notificationService;
+        this.geminiService = geminiService;
     }
 
     @PostMapping("/upload")
@@ -40,6 +43,13 @@ public class NotificationController {
     @PostMapping("/analyze-contract")
     public ResponseEntity<ContractAnalysisResponse> analyzeContract(@RequestParam("file") MultipartFile file) {
         ContractAnalysisResponse result = notificationService.analyzeContract(file);
+
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/ai-upload")
+    public ResponseEntity<List<Notification>> aiUpload(@RequestParam("file") MultipartFile file) {
+        List<Notification> result = geminiService.analyzeAndCreateNotifications(file);
 
         return ResponseEntity.ok(result);
     }

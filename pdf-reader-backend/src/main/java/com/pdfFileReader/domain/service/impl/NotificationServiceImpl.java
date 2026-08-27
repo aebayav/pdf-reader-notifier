@@ -8,6 +8,7 @@ import com.pdfFileReader.domain.entity.Status;
 import com.pdfFileReader.domain.service.NotificationService;
 import com.pdfFileReader.exception.PdfReadException;
 import com.pdfFileReader.repository.NotificationRepository;
+import com.pdfFileReader.util.HashUtil;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
@@ -25,8 +26,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -184,7 +183,7 @@ public class NotificationServiceImpl implements NotificationService {
         // Belge bazli mükerrer kontrolu: ayni icerik hash'i daha once islendiyse
         // hicbir not tekrar eklenmez (satir/etiket bazli kontrol farkli
         // sozlesmelerdeki ayni satirlari yanlislikla atlardi).
-        String sourceHash = hashOf(extractedText.text());
+        String sourceHash = HashUtil.sha256Hex(extractedText.text());
         if (notificationRepository.existsBySourceHash(sourceHash)) {
             log.info("Bu belge daha once islenmis, atlandi: {}", file.getOriginalFilename());
             return List.of();
@@ -201,21 +200,6 @@ public class NotificationServiceImpl implements NotificationService {
         }
 
         return notificationRepository.saveAll(notifications);
-    }
-
-    private String hashOf(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(text.getBytes(StandardCharsets.UTF_8));
-
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 kullanilamadi", e);
-        }
     }
 
     @Override
@@ -250,7 +234,10 @@ public class NotificationServiceImpl implements NotificationService {
         String method = "PDF_TEXT";
 
         if (isTextLowQuality(text)) {
-            log.info("PDF text is low quality, falling back to OCR.");
+            // Taranmis belgelerde metin katmani olmamasi NORMAL durumdur;
+            // tek bir bilgilendirme mesaji ile OCR yoluna gecilir.
+            log.info("PDF'te kullanilabilir metin katmani yok, OCR ile taranacak: {}",
+                    file.getOriginalFilename());
             text = extractTextWithOcr(file);
             method = "OCR";
         }
@@ -268,7 +255,8 @@ public class NotificationServiceImpl implements NotificationService {
             String text = pdfStripper.getText(document);
 
             if (text == null || text.isBlank()) {
-                log.warn("PDF text is empty or could not be read.");
+                // Metin katmanisiz (taranmis) PDF'lerde normal durum;
+                // ayrintisi extractReadableText'te loglanir, burada sessiz kalinir.
                 return "";
             }
 
