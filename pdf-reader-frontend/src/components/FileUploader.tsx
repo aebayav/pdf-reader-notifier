@@ -48,6 +48,12 @@ const FileUploader = ({ onUpload, loading = false }: FileUploaderProps) => {
                     style={{display:"none"}}
                 />
             </div>
+            {loading && (
+                <div className="loading-indicator" role="status" aria-live="polite">
+                    <div className="spinner" aria-hidden="true" />
+                    <p className="loading-text">Tarama yapılıyor...</p>
+                </div>
+            )}
             {uploadedFile && (
                 <p className="text-white" style={{marginTop: "16px", fontSize: "0.95rem"}}>
                     ✓ Uploaded: <strong>{uploadedFile}</strong>

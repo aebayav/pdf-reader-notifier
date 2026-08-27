@@ -548,3 +548,28 @@ select:focus {
   padding: 40px 20px;
   font-size: 1.05rem;
 }
+
+/* Tarama / yükleme göstergesi */
+.loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+}
+
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--warning);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.loading-text {
+  color: var(--slate-50);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
