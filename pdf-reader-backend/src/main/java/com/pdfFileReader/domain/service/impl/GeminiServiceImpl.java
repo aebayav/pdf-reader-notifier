@@ -37,8 +37,12 @@ public class GeminiServiceImpl implements GeminiService {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiServiceImpl.class);
 
-    /** Prompt'a gonderilecek maksimum karakter sayisi (guvenlik siniri). */
-    private static final int MAX_INPUT_CHARS = 150_000;
+    /**
+     * Prompt'a gonderilecek maksimum karakter sayisi. Gemini 3.6 Flash'in
+     * 1M token'lik giris limiti vardir; sozlesmeler bu sinirin cok altinda
+     * oldugu icin pratikte metin ASLA parcalanmaz/kisaltilmaz.
+     */
+    private static final int MAX_INPUT_CHARS = 1_000_000;
 
     private static final DateTimeFormatter ALTERNATE_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
@@ -87,8 +91,10 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         String prompt = buildPrompt(text);
+        log.info("Gemini'ye TEK istek gonderiliyor: {} karakter (belgenin tamami)", prompt.length());
         String jsonText = callGemini(resolvedKey, prompt);
         List<Notification> notifications = parseToNotifications(jsonText);
+        log.info("Gemini yaniti parcalara ayrildi: {} bildirim", notifications.size());
 
         if (notifications.isEmpty()) {
             log.warn("Gemini hicbir bildirim uretmedi: {}", file.getOriginalFilename());

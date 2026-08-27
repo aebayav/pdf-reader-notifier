@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,6 +34,26 @@ class GeminiServiceImplTest {
         assertTrue(prompt.contains("Yer teslim tarihi 10.04.2025."), "metin prompt icinde olmali");
         assertTrue(prompt.contains("YYYY-AA-GG"), "tarih formati kurali olmali");
         assertTrue(prompt.contains("JSON dizisi"), "JSON kurali olmali");
+    }
+
+    @Test
+    void buildPromptDoesNotTruncateContractSizedText() {
+        String longText = "x".repeat(250_000);
+
+        String prompt = service.buildPrompt(longText);
+
+        assertTrue(prompt.contains(longText),
+                "250K karakterlik sozlesme metni TEK istekte eksiksiz gitmeli (parcalanmamali)");
+        assertFalse(prompt.contains("kisaltildi"), "kisaltma notu olmamali");
+    }
+
+    @Test
+    void buildPromptTruncatesOnlyBeyondModelLimit() {
+        String hugeText = "y".repeat(1_200_000);
+
+        String prompt = service.buildPrompt(hugeText);
+
+        assertTrue(prompt.contains("kisaltildi"), "1M siniri asilinca kisaltma notu dusmeli");
     }
 
     @Test
