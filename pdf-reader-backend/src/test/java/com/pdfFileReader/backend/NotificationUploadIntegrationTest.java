@@ -159,4 +159,62 @@ class NotificationUploadIntegrationTest {
         assertThrows(NotificationNotFoundException.class,
                 () -> notificationService.delete(UUID.randomUUID()));
     }
+
+    @Test
+    void findUpcomingReturnsNearAndOverdueOnly() throws Exception {
+        MockMultipartFile pdf = TestPdfFactory.createPdf("notifier.pdf",
+                "Yakin tarih bildirimi 03.05.2026 tarihinde yapilacaktir.",
+                "Uzak tarih bildirimi 03.05.2027 tarihinde yapilacaktir ve bu sure icinde takip edilecektir."
+        );
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+        assertFalse(saved.isEmpty());
+
+        // Uzak tarihli olani manuel yakin tarihe cek (test kararliligi icin)
+        Notification far = saved.stream()
+                .filter(n -> n.getTitle().contains("Uzak"))
+                .findFirst()
+                .orElseThrow();
+        LocalDate past = LocalDate.now().minusDays(1);
+        notificationService.update(far.getId(),
+                new UpdateNotificationRequest(null, null, past, null));
+
+        List<Notification> upcoming = notificationService.findUpcoming(7);
+
+        assertTrue(upcoming.stream().anyMatch(n -> n.getDueDate().equals(past)),
+                "gecikmis bildirim gelmeli");
+        assertTrue(upcoming.stream().noneMatch(n -> n.getDueDate().isAfter(LocalDate.now().plusDays(7))),
+                "7 gunden uzak bildirim gelmemeli");
+        assertTrue(upcoming.stream().noneMatch(n -> n.getStatus() == Status.CLOSED),
+                "kapali bildirimler gelmemeli");
+    }
+
+    @Test
+    void markOverdueMovesOnlyPastInProgressToDueDate() throws Exception {
+        MockMultipartFile pdf = TestPdfFactory.createPdf("notifier2.pdf",
+                "Ilk bildirim 15.11.2025 tarihinde yapilacaktir.",
+                "Ikinci bildirim 20.01.2026 tarihinde yapilacaktir ve takip edilecektir."
+        );
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+
+        // Ilk bildirimi gecmise cek, ikincisini COMPLETED yap
+        Notification first = saved.get(0);
+        notificationService.update(first.getId(),
+                new UpdateNotificationRequest(null, null, LocalDate.now().minusDays(2), null));
+        Notification second = saved.get(1);
+        notificationService.update(second.getId(),
+                new UpdateNotificationRequest(null, null, null, Status.COMPLETED));
+
+        int marked = notificationService.markOverdue();
+
+        // Not: paylasilan DB'de baska gecikmis kayitlar da olabileceginden
+        // kesin sayi yerine kendi test satirlarimizin davranisini dogrulariz.
+        assertTrue(marked >= 1, "en az bizim gecikmis test satirimiz isaretlenmeli");
+        assertEquals(Status.DUE_DATE, notificationService.findAll().stream()
+                        .filter(n -> n.getId().equals(first.getId()))
+                        .findFirst().orElseThrow().getStatus());
+        assertEquals(Status.COMPLETED, notificationService.findAll().stream()
+                        .filter(n -> n.getId().equals(second.getId()))
+                        .findFirst().orElseThrow().getStatus(),
+                "COMPLETED bildirime dokunulmamali");
+    }
 }

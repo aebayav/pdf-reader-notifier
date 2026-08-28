@@ -573,3 +573,47 @@ select:focus {
   font-weight: 600;
   letter-spacing: 0.4px;
 }
+
+/* Notifier: yaklasan/gecikmis uyarilari */
+.upcoming-banner {
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin: 18px 0;
+  color: var(--slate-50);
+  font-size: 0.95rem;
+}
+
+.upcoming-banner.has-overdue {
+  background: rgba(244, 67, 54, 0.14);
+  border-color: #f44336;
+}
+
+.upcoming-banner ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.upcoming-banner li {
+  margin: 3px 0;
+}
+
+.card-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
+.badge-overdue {
+  background: #f44336;
+  color: #fff;
+}
+
+.badge-soon {
+  background: var(--warning);
+  color: #1e1b2e;
+}

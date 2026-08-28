@@ -63,6 +63,21 @@ const NotificationCard = ({ id, title, description, dueDate, status, onUpdate, o
         return `${day}.${month}.${year}`
     }
 
+    const getDaysLeft = (isoDate?: string): number | null => {
+        if (!isoDate) {
+            return null
+        }
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const due = new Date(isoDate)
+        due.setHours(0, 0, 0, 0)
+        return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    const daysLeft = getDaysLeft(dueDate)
+    const isOverdue = daysLeft !== null && daysLeft < 0 && status !== "COMPLETED" && status !== "CLOSED"
+    const isSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7 && status !== "COMPLETED" && status !== "CLOSED"
+
     const startEdit = () => {
         setDraftTitle(title)
         setDraftDueDate(dueDate ?? "")
@@ -132,6 +147,8 @@ const NotificationCard = ({ id, title, description, dueDate, status, onUpdate, o
                 ) : (
                     <>
                         <h3 className="card-title">{title}</h3>
+                        {isOverdue && <span className="card-badge badge-overdue">⏰ {daysLeft !== null ? -daysLeft : "?"} gün GECTİ</span>}
+                        {isSoon && !isOverdue && <span className="card-badge badge-soon">⏳ {daysLeft === 0 ? "BUGÜN" : `${daysLeft} gün kaldı`}</span>}
                         {description && <p className="card-desciption">{description}</p>}
                         {dueDate && <p className="card-due-date">Son Tarih: {formatDate(dueDate)}</p>}
                         <p className={`card-status ${getStatusClass(status)}`}>Durum: {STATUS_LABELS[status] ?? status}</p>

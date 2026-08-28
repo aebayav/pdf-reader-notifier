@@ -2,9 +2,11 @@ import { useEffect, useState } from "react"
 import Header from "./components/Header"
 import FileUploader from "./components/FileUploader"
 import CardGallery from "./components/CardGallery"
+import UpcomingBanner from "./components/UpcomingBanner"
 import {
   uploadPdf,
   fetchNotifications,
+  fetchUpcoming,
   updateNotification,
   deleteNotification,
   Notification,
@@ -13,14 +15,19 @@ import {
 
 function App() {
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [upcoming, setUpcoming] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [useAi, setUseAi] = useState(true)
 
   const reload = async () => {
     try {
-      const result = await fetchNotifications()
-      setNotifications(result)
+      const [all, near] = await Promise.all([
+        fetchNotifications(),
+        fetchUpcoming(7),
+      ])
+      setNotifications(all)
+      setUpcoming(near)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.")
     }
@@ -50,6 +57,7 @@ function App() {
       setNotifications((current) =>
         current.map((n) => (n.id === id ? updated : n))
       )
+      await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.")
     }
@@ -60,6 +68,7 @@ function App() {
     try {
       await deleteNotification(id)
       setNotifications((current) => current.filter((n) => n.id !== id))
+      setUpcoming((current) => current.filter((n) => n.id !== id))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.")
     }
@@ -75,6 +84,7 @@ function App() {
         onAiChange={setUseAi}
       />
       {error && <p className="upload-error">⚠ {error}</p>}
+      <UpcomingBanner upcoming={upcoming} />
       <CardGallery
         notifications={notifications}
         onUpdate={handleUpdate}

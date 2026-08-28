@@ -20,4 +20,14 @@ public interface NotificationService {
     Notification update(UUID id, UpdateNotificationRequest request);
 
     void delete(UUID id);
+
+    /**
+     * Yaklasan ve gecikmis bildirimleri dondurur: dueDate'i bugun ile
+     * bugun+days arasinda olanlar + bugunden gecmis ama kapatilmamis
+     * (COMPLETED/CLOSED olmayan) tum bildirimler. Son tarihe gore sirali.
+     */
+    List<Notification> findUpcoming(int days);
+
+    /** Süresi gecmis IN_PROGRESS bildirimleri DUE_DATE'e ceker, adedi dondurur. */
+    int markOverdue();
 }

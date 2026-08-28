@@ -61,6 +61,16 @@ export async function fetchNotifications(): Promise<Notification[]> {
   return response.json();
 }
 
+export async function fetchUpcoming(days: number = 7): Promise<Notification[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/upcoming?days=${days}`);
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
+}
+
 export async function updateNotification(
   id: string,
   payload: UpdateNotificationPayload

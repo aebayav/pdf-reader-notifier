@@ -800,4 +800,37 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.deleteById(id);
         log.info("Bildirim silindi: {}", id);
     }
+
+    @Override
+    public List<Notification> findUpcoming(int days) {
+        LocalDate today = LocalDate.now();
+        LocalDate horizon = today.plusDays(Math.max(days, 0));
+
+        return notificationRepository.findAll(Sort.by(Sort.Direction.ASC, "dueDate")).stream()
+                .filter(n -> n.getDueDate() != null)
+                .filter(n -> n.getStatus() != Status.COMPLETED && n.getStatus() != Status.CLOSED)
+                .filter(n -> !n.getDueDate().isAfter(horizon))
+                .toList();
+    }
+
+    @Override
+    public int markOverdue() {
+        LocalDate today = LocalDate.now();
+
+        List<Notification> overdue = notificationRepository.findAll().stream()
+                .filter(n -> n.getDueDate() != null)
+                .filter(n -> n.getStatus() == Status.IN_PROGRESS)
+                .filter(n -> n.getDueDate().isBefore(today))
+                .toList();
+
+        for (Notification notification : overdue) {
+            notification.setStatus(Status.DUE_DATE);
+        }
+
+        notificationRepository.saveAll(overdue);
+        if (!overdue.isEmpty()) {
+            log.info("Suresi gecen {} bildirim DUE_DATE durumuna alindi", overdue.size());
+        }
+        return overdue.size();
+    }
 }

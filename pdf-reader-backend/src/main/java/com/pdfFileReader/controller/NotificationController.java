@@ -61,6 +61,13 @@ public class NotificationController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/upcoming")
+    public ResponseEntity<List<Notification>> upcomingNotifications(
+            @RequestParam(defaultValue = "7") int days
+    ) {
+        return ResponseEntity.ok(notificationService.findUpcoming(days));
+    }
+
     @GetMapping
     public ResponseEntity<List<Notification>> listNotifications() {
         return ResponseEntity.ok(notificationService.findAll());
