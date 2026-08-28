@@ -6,6 +6,8 @@ import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
 import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.domain.service.GeminiService;
 import com.pdfFileReader.domain.service.NotificationService;
+import com.pdfFileReader.mail.EmailService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,10 +29,12 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final GeminiService geminiService;
+    private final EmailService emailService;
 
-    public NotificationController(NotificationService notificationService, GeminiService geminiService) {
+    public NotificationController(NotificationService notificationService, GeminiService geminiService, EmailService emailService) {
         this.notificationService = notificationService;
         this.geminiService = geminiService;
+        this.emailService = emailService;
     }
 
     @PostMapping("/upload")
@@ -86,5 +90,16 @@ public class NotificationController {
         notificationService.delete(id);
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/mail-test")
+    public ResponseEntity<ApiExceptionHandler.ApiError> sendTestMail() {
+        try {
+            emailService.sendTestMail();
+            return ResponseEntity.ok(new ApiExceptionHandler.ApiError("OK", "Test epostasi gonderildi"));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(new ApiExceptionHandler.ApiError("MAIL_NOT_CONFIGURED", e.getMessage()));
+        }
     }
 }
