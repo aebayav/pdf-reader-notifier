@@ -1,59 +1,133 @@
 package com.pdfFileReader.mail;
 
 import com.pdfFileReader.domain.entity.Notification;
+import com.pdfFileReader.util.EnvReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Properties;
 
 /**
- * Bildirimleri e-posta ile gonderir. SMTP ayarlari .env uzerinden gelir;
- * yapilandirilmamissa (host/kullanici/to bos) sessizce atlar, hata firlatmaz.
+ * Bildirimleri e-posta ile gonderir. SMTP ayarlari ortam degiskenlerinden
+ * veya .env dosyasindan (EnvReader) gelir; yapilandirilmamissa sessizce
+ * atlar. JavaMailSender'i kendisi kurar - baslatma yonteminden bagimsizdir.
  */
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
-    private final JavaMailSender mailSender;
     private final boolean enabled;
-    private final String from;
-    private final String to;
-    private final String host;
+    private final String fromConfig;
+    private final String toConfig;
+    private final MailCredentials fixedCredentials;
 
+    private volatile JavaMailSender cachedSender;
+
+    @Autowired
     public EmailService(
-            ObjectProvider<JavaMailSender> mailSenderProvider,
             @Value("${app.mail.enabled:true}") boolean enabled,
             @Value("${app.mail.from:}") String from,
-            @Value("${app.mail.to:}") String to,
-            @Value("${spring.mail.host:}") String host
+            @Value("${app.mail.to:}") String to
     ) {
-        this.mailSender = mailSenderProvider.getIfAvailable();
-        this.enabled = enabled;
-        this.from = from;
-        this.to = to;
-        this.host = host;
+        this(enabled, from, to, null);
     }
 
-    private boolean isConfigured() {
+    /** Testlerin .env'e dokunmadan sabit kimliklerle calisabilmesi icin. */
+    EmailService(boolean enabled, String from, String to, MailCredentials credentials) {
+        this.enabled = enabled;
+        this.fromConfig = from;
+        this.toConfig = to;
+        this.fixedCredentials = credentials;
+    }
+
+    record MailCredentials(String host, int port, String username, String password) {
+    }
+
+    private MailCredentials credentials() {
+        if (fixedCredentials != null) {
+            return fixedCredentials;
+        }
+        return new MailCredentials(
+                EnvReader.read("MAIL_HOST"),
+                Integer.parseInt(resolvedPort()),
+                EnvReader.read("MAIL_USERNAME"),
+                EnvReader.read("MAIL_PASSWORD")
+        );
+    }
+
+    String resolvedHost() {
+        MailCredentials c = credentials();
+        return c.host() == null ? "" : c.host();
+    }
+
+    String resolvedPort() {
+        String port = EnvReader.read("MAIL_PORT");
+        return port.isBlank() ? "587" : port;
+    }
+
+    String resolvedUsername() {
+        return credentials().username() == null ? "" : credentials().username();
+    }
+
+    String resolvedPassword() {
+        return credentials().password() == null ? "" : credentials().password();
+    }
+
+    String resolvedFrom() {
+        return EnvReader.or(fromConfig, "MAIL_FROM");
+    }
+
+    String resolvedTo() {
+        return EnvReader.or(toConfig, "MAIL_TO");
+    }
+
+    boolean isConfigured() {
         return enabled
-                && mailSender != null
-                && !isBlank(host)
-                && !isBlank(from)
-                && !isBlank(to);
+                && !resolvedHost().isBlank()
+                && !resolvedUsername().isBlank()
+                && !resolvedPassword().isBlank()
+                && !resolvedFrom().isBlank()
+                && !resolvedTo().isBlank();
+    }
+
+    private JavaMailSender sender() {
+        if (cachedSender == null) {
+            synchronized (this) {
+                if (cachedSender == null) {
+                    MailCredentials c = credentials();
+
+                    JavaMailSenderImpl impl = new JavaMailSenderImpl();
+                    impl.setHost(c.host());
+                    impl.setPort(c.port());
+                    impl.setUsername(c.username());
+                    impl.setPassword(c.password());
+
+                    Properties props = new Properties();
+                    props.put("mail.smtp.auth", "true");
+                    props.put("mail.smtp.starttls.enable", "true");
+                    impl.setJavaMailProperties(props);
+
+                    cachedSender = impl;
+                }
+            }
+        }
+        return cachedSender;
     }
 
     public void sendDailySummary(List<Notification> upcoming, int newlyMarked) {
         if (!isConfigured()) {
-            log.info("SMTP yapilandirilmadigi icin eposta bildirimi atlandi (.env: MAIL_HOST/MAIL_FROM/MAIL_TO)");
+            log.info("SMTP yapilandirilmadigi icin eposta bildirimi atlandi (.env: MAIL_HOST/MAIL_USERNAME/MAIL_PASSWORD/MAIL_FROM/MAIL_TO)");
             return;
         }
 
@@ -102,24 +176,29 @@ public class EmailService {
                             + "MAIL_FROM ve MAIL_TO degerlerini ekleyip backend'i yeniden baslatin.");
         }
 
-        send("PDF Reader Notifier: SMTP testi basarili", "SMTP ayarlari calisiyor. Iyi takipler!");
-    }
+        boolean sent = send("PDF Reader Notifier: SMTP testi basarili", "SMTP ayarlari calisiyor. Iyi takipler!");
 
-    private void send(String subject, String text) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(from);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(text);
-            mailSender.send(message);
-            log.info("Eposta gonderildi: '{}' -> {}", subject, to);
-        } catch (MailException e) {
-            log.error("Eposta gonderilemedi: {}", e.getMessage());
+        if (!sent) {
+            throw new IllegalStateException(
+                    "Eposta gonderilemedi - SMTP sunucusu reddetti. Backend loglarini kontrol edin "
+                            + "(host: " + resolvedHost() + ", kullanici: " + resolvedUsername() + ")");
         }
     }
 
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
+    /** Gonderim basariliysa true doner; MailException loglanip yutulur. */
+    private boolean send(String subject, String text) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(resolvedFrom());
+            message.setTo(resolvedTo());
+            message.setSubject(subject);
+            message.setText(text);
+            sender().send(message);
+            log.info("Eposta gonderildi: '{}' -> {}", subject, resolvedTo());
+            return true;
+        } catch (MailException | NumberFormatException e) {
+            log.error("Eposta gonderilemedi: {}", e.getMessage());
+            return false;
+        }
     }
 }
