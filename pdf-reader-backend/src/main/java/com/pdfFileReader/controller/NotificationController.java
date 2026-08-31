@@ -4,8 +4,9 @@ import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
 import com.pdfFileReader.domain.dto.ExtractedTextResponse;
 import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
 import com.pdfFileReader.domain.entity.Notification;
-import com.pdfFileReader.domain.service.GeminiService;
+import com.pdfFileReader.domain.entity.ProcessingJob;
 import com.pdfFileReader.domain.service.NotificationService;
+import com.pdfFileReader.domain.service.impl.JobService;
 import com.pdfFileReader.mail.EmailService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,20 +29,24 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
-    private final GeminiService geminiService;
     private final EmailService emailService;
+    private final JobService jobService;
 
-    public NotificationController(NotificationService notificationService, GeminiService geminiService, EmailService emailService) {
+    public NotificationController(
+            NotificationService notificationService,
+            EmailService emailService,
+            JobService jobService
+    ) {
         this.notificationService = notificationService;
-        this.geminiService = geminiService;
         this.emailService = emailService;
+        this.jobService = jobService;
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<List<Notification>> uploadPdf(@RequestParam("file") MultipartFile file) {
-        List<Notification> result = notificationService.processAndSaveNotifications(file);
+    public ResponseEntity<ProcessingJob> upload(@RequestParam("file") MultipartFile file) {
+        ProcessingJob job = jobService.enqueue(file, false);
 
-        return ResponseEntity.ok(result);
+        return ResponseEntity.accepted().body(job);
     }
 
     @PostMapping("/extract-text")
@@ -59,10 +64,20 @@ public class NotificationController {
     }
 
     @PostMapping("/ai-upload")
-    public ResponseEntity<List<Notification>> aiUpload(@RequestParam("file") MultipartFile file) {
-        List<Notification> result = geminiService.analyzeAndCreateNotifications(file);
+    public ResponseEntity<ProcessingJob> aiUpload(@RequestParam("file") MultipartFile file) {
+        ProcessingJob job = jobService.enqueue(file, true);
 
-        return ResponseEntity.ok(result);
+        return ResponseEntity.accepted().body(job);
+    }
+
+    @GetMapping("/jobs/{id}")
+    public ResponseEntity<ProcessingJob> jobStatus(@PathVariable UUID id) {
+        return ResponseEntity.ok(jobService.getJob(id));
+    }
+
+    @GetMapping("/jobs")
+    public ResponseEntity<List<ProcessingJob>> recentJobs(@RequestParam(defaultValue = "10") int limit) {
+        return ResponseEntity.ok(jobService.recentJobs(limit));
     }
 
     @GetMapping("/upcoming")

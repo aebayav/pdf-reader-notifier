@@ -1,6 +1,7 @@
 export const API_BASE_URL = "http://localhost:8080";
 
 export type NotificationStatus = "COMPLETED" | "IN_PROGRESS" | "DUE_DATE" | "CLOSED";
+export type JobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
 
 export interface Notification {
   id: string;
@@ -9,6 +10,17 @@ export interface Notification {
   dueDate?: string | null; // "YYYY-MM-DD"
   createDate?: string | null; // "YYYY-MM-DD"
   status: NotificationStatus;
+}
+
+export interface ProcessingJob {
+  id: string;
+  status: JobStatus;
+  fileName: string;
+  useAi: boolean;
+  submittedAt?: string | null;
+  completedAt?: string | null;
+  notificationCount: number;
+  errorMessage?: string | null;
 }
 
 export interface UpdateNotificationPayload {
@@ -31,7 +43,7 @@ async function parseError(response: Response): Promise<never> {
   throw new Error(message);
 }
 
-export async function uploadPdf(file: File, useAi: boolean = false): Promise<Notification[]> {
+export async function uploadPdf(file: File, useAi: boolean = false): Promise<ProcessingJob> {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -43,6 +55,16 @@ export async function uploadPdf(file: File, useAi: boolean = false): Promise<Not
     method: "POST",
     body: formData,
   });
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
+}
+
+export async function fetchJob(id: string): Promise<ProcessingJob> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/jobs/${id}`);
 
   if (!response.ok) {
     return parseError(response);

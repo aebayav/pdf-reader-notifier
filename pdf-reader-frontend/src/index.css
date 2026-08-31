@@ -617,3 +617,27 @@ select:focus {
   background: var(--warning);
   color: #1e1b2e;
 }
+
+/* Asenkron is durumu satiri */
+.job-status {
+  margin: 12px 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--slate-50);
+}
+
+.job-status.job-queued {
+  color: #4fc3f7;
+}
+
+.job-status.job-processing {
+  color: var(--warning);
+}
+
+.job-status.job-completed {
+  color: #66bb6a;
+}
+
+.job-status.job-failed {
+  color: #f44336;
+}
