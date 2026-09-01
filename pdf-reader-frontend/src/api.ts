@@ -26,21 +26,131 @@ export interface ProcessingJob {
 export interface UpdateNotificationPayload {
   title?: string;
   description?: string;
-  dueDate?: string; // "YYYY-MM-DD"
+  dueDate?: string;
   status?: NotificationStatus;
 }
 
+export interface AuthResponse {
+  token: string;
+  userId: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Oturum yonetimi (sessionStorage: parola/token diske yazilmaz)       */
+/* ------------------------------------------------------------------ */
+
+const TOKEN_KEY = "pdf-reader-token";
+
+export function getToken(): string | null {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function setSession(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearSession(): void {
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+export function isLoggedIn(): boolean {
+  return getToken() !== null;
+}
+
+/* ------------------------------------------------------------------ */
+/* API yardimcilari                                                     */
+/* ------------------------------------------------------------------ */
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function parseError(response: Response): Promise<never> {
-  let message = `Sunucu hatası (${response.status})`;
+  let message = `HTTP ${response.status}`;
   try {
-    const errorBody = await response.json();
-    if (errorBody?.message) {
-      message = errorBody.message;
+    const body = await response.json();
+    if (body && typeof body.message === "string") {
+      message = body.message;
     }
   } catch {
-    // Yanıt JSON değilse varsayılan mesajı kullan
+    // JSON degilse status mesaji yeterli
   }
-  throw new Error(message);
+  throw new ApiError(response.status, message);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/* ------------------------------------------------------------------ */
+/* Auth                                                                 */
+/* ------------------------------------------------------------------ */
+
+export async function register(username: string, password: string): Promise<AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
+}
+
+export async function login(username: string, password: string): Promise<AuthResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
+}
+
+/* ------------------------------------------------------------------ */
+/* Bildirimler + isler (hepsi token ister)                             */
+/* ------------------------------------------------------------------ */
+
+export async function fetchNotifications(): Promise<Notification[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
+}
+
+export async function fetchUpcoming(days: number = 7): Promise<Notification[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/notifications/upcoming?days=${days}`,
+    { headers: authHeaders() }
+  );
+
+  if (!response.ok) {
+    return parseError(response);
+  }
+
+  return response.json();
 }
 
 export async function uploadPdf(file: File, useAi: boolean = false): Promise<ProcessingJob> {
@@ -53,6 +163,7 @@ export async function uploadPdf(file: File, useAi: boolean = false): Promise<Pro
 
   const response = await fetch(endpoint, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
 
@@ -64,27 +175,9 @@ export async function uploadPdf(file: File, useAi: boolean = false): Promise<Pro
 }
 
 export async function fetchJob(id: string): Promise<ProcessingJob> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/jobs/${id}`);
-
-  if (!response.ok) {
-    return parseError(response);
-  }
-
-  return response.json();
-}
-
-export async function fetchNotifications(): Promise<Notification[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/notifications`);
-
-  if (!response.ok) {
-    return parseError(response);
-  }
-
-  return response.json();
-}
-
-export async function fetchUpcoming(days: number = 7): Promise<Notification[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/upcoming?days=${days}`);
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/jobs/${id}`, {
+    headers: authHeaders(),
+  });
 
   if (!response.ok) {
     return parseError(response);
@@ -99,7 +192,10 @@ export async function updateNotification(
 ): Promise<Notification> {
   const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      ...authHeaders(),
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(payload),
   });
 
@@ -113,6 +209,7 @@ export async function updateNotification(
 export async function deleteNotification(id: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${id}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
 
   if (!response.ok) {

@@ -3,6 +3,7 @@ import Header from "./components/Header"
 import FileUploader from "./components/FileUploader"
 import CardGallery from "./components/CardGallery"
 import UpcomingBanner from "./components/UpcomingBanner"
+import Login from "./components/Login"
 import {
   uploadPdf,
   fetchJob,
@@ -10,6 +11,8 @@ import {
   fetchUpcoming,
   updateNotification,
   deleteNotification,
+  isLoggedIn,
+  clearSession,
   Notification,
   ProcessingJob,
   UpdateNotificationPayload,
@@ -23,6 +26,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 }
 
 function App() {
+  const [loggedIn, setLoggedIn] = useState(isLoggedIn())
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [upcoming, setUpcoming] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
@@ -30,6 +34,18 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [useAi, setUseAi] = useState(true)
   const pollRef = useRef<number | null>(null)
+
+  const handleLogout = () => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    clearSession()
+    setLoggedIn(false)
+    setNotifications([])
+    setUpcoming([])
+    setJob(null)
+  }
 
   const reload = async () => {
     try {
@@ -116,9 +132,17 @@ function App() {
     }
   }
 
+  if (!loggedIn) {
+    return (
+      <>
+        <Login onSuccess={() => setLoggedIn(true)} />
+      </>
+    )
+  }
+
   return (
     <>
-      <Header />
+      <Header onLogout={handleLogout} />
       <FileUploader
         onUpload={handleUpload}
         loading={loading}

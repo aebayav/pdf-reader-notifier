@@ -641,3 +641,111 @@ select:focus {
 .job-status.job-failed {
   color: #f44336;
 }
+
+/* Auth: giris/kayit ekrani + cikis butonu */
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header-logout {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.4);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.header-logout:hover {
+  background: rgba(244, 67, 54, 0.28);
+}
+
+.login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+}
+
+.login-card {
+  background: rgba(30, 27, 46, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--slate-50);
+}
+
+.login-subtitle {
+  margin: 0 0 12px;
+  color: var(--slate-400);
+  font-size: 0.9rem;
+}
+
+.login-label {
+  font-size: 0.85rem;
+  color: var(--slate-300);
+  margin-top: 8px;
+}
+
+.login-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--slate-50);
+  font-size: 1rem;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: #4fc3f7;
+}
+
+.login-error {
+  margin: 8px 0 0;
+  color: #f44336;
+  font-size: 0.9rem;
+}
+
+.login-button {
+  margin-top: 16px;
+  background: #4fc3f7;
+  color: #1e1b2e;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.login-switch {
+  margin-top: 4px;
+  background: none;
+  border: none;
+  color: #4fc3f7;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+}

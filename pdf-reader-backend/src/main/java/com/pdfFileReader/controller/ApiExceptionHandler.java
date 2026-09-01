@@ -1,5 +1,6 @@
 package com.pdfFileReader.controller;
 
+import com.pdfFileReader.exception.AuthException;
 import com.pdfFileReader.exception.GeminiException;
 import com.pdfFileReader.exception.NotificationNotFoundException;
 import com.pdfFileReader.exception.PdfReadException;
@@ -30,6 +31,13 @@ public class ApiExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(new ApiError("NOT_FOUND", exception.getMessage()));
+    }
+
+    @ExceptionHandler(AuthException.class)
+    public ResponseEntity<ApiError> handleAuthException(AuthException exception) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(new ApiError("AUTH_FAILED", exception.getMessage()));
     }
 
     public record ApiError(String code, String message) {
