@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,7 +34,7 @@ public class JobService implements ApplicationRunner {
     }
 
     /** Evrak'i kuyruga alir, aninda doner (agir islem arka planda). */
-    public ProcessingJob enqueue(MultipartFile file, boolean useAi) {
+    public ProcessingJob enqueue(MultipartFile file, boolean useAi, UUID userId) {
         try {
             byte[] bytes = file.getBytes();
 
@@ -43,27 +42,28 @@ public class JobService implements ApplicationRunner {
             job.setStatus(JobStatus.QUEUED);
             job.setFileName(file.getOriginalFilename() != null ? file.getOriginalFilename() : "bilinmeyen.pdf");
             job.setUseAi(useAi);
+            job.setUserId(userId);
             job.setSubmittedAt(LocalDateTime.now());
 
             job = jobRepository.save(job);
             jobProcessor.submitBytes(job.getId(), bytes);
             jobProcessor.process(job.getId());
 
-            log.info("Evrak siraya alindi: {} (job={}, ai={})", job.getFileName(), job.getId(), useAi);
+            log.info("Evrak siraya alindi: {} (job={}, ai={}, user={})", job.getFileName(), job.getId(), useAi, userId);
             return job;
         } catch (IOException e) {
             throw new IllegalStateException("Dosya okunamadi: " + e.getMessage(), e);
         }
     }
 
-    public ProcessingJob getJob(UUID id) {
+    public ProcessingJob getJob(UUID id, UUID userId) {
         return jobRepository.findById(id)
+                .filter(j -> userId.equals(j.getUserId()))
                 .orElseThrow(() -> new NotificationNotFoundException(id));
     }
 
-    public List<ProcessingJob> recentJobs(int limit) {
-        return jobRepository.findAll(Sort.by(Sort.Direction.DESC, "submittedAt"))
-                .stream()
+    public List<ProcessingJob> recentJobs(int limit, UUID userId) {
+        return jobRepository.findAllByUserIdOrderBySubmittedAtDesc(userId).stream()
                 .limit(Math.max(Math.min(limit, 50), 1))
                 .toList();
     }

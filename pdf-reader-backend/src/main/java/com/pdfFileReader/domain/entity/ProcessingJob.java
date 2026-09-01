@@ -62,4 +62,8 @@ public class ProcessingJob {
 
     @Column(name = "source_hash", length = 64)
     private String sourceHash;
+
+    /** Isi gonderen kullanici (isler de kullaniciya ozeldir). */
+    @Column(name = "user_id")
+    private UUID userId;
 }

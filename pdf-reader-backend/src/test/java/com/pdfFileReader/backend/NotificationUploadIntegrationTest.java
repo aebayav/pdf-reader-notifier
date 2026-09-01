@@ -3,10 +3,13 @@ package com.pdfFileReader.backend;
 import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
 import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.domain.entity.Status;
+import com.pdfFileReader.domain.entity.User;
 import com.pdfFileReader.domain.service.NotificationService;
 import com.pdfFileReader.exception.NotificationNotFoundException;
 import com.pdfFileReader.repository.NotificationRepository;
+import com.pdfFileReader.repository.UserRepository;
 import com.pdfFileReader.testutil.TestPdfFactory;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +36,20 @@ class NotificationUploadIntegrationTest {
     @Autowired
     private NotificationRepository notificationRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    private UUID userId;
+
+    @BeforeEach
+    void createTestUser() {
+        User user = new User();
+        user.setUsername("upload-test-" + System.currentTimeMillis());
+        user.setPasswordHash("x");
+        userRepository.save(user);
+        userId = user.getId();
+    }
+
     @Test
     void uploadSavesNotificationsToDatabase() throws Exception {
         MockMultipartFile pdf = TestPdfFactory.createPdf("bildirim.pdf",
@@ -43,7 +60,7 @@ class NotificationUploadIntegrationTest {
 
         long before = notificationRepository.count();
 
-        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf, userId);
 
         assertFalse(saved.isEmpty(), "bildirim cikarilamadi");
         assertEquals(2, saved.size());
@@ -64,12 +81,12 @@ class NotificationUploadIntegrationTest {
                 "Bu test bildirim surecinde taraflarin tum yukumlulukleri ilgili mevzuat hukumlerine gore degerlendirilecektir."
         );
 
-        List<Notification> first = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> first = notificationService.processAndSaveNotifications(pdf, userId);
         assertFalse(first.isEmpty(), "ilk yukleme kayit uretmeli");
 
         long countAfterFirst = notificationRepository.count();
 
-        List<Notification> second = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> second = notificationService.processAndSaveNotifications(pdf, userId);
 
         assertTrue(second.isEmpty(), "ayni belge ikinci kez islenmemeli, uretilen: " + second);
         assertEquals(countAfterFirst, notificationRepository.count(), "duplicate kayit eklendi");
@@ -86,10 +103,10 @@ class NotificationUploadIntegrationTest {
                 "Bu ikinci test belgesidir ve farkli icerige sahip olmasina ragmen ilk belge ile ayni tarih satirini icerir."
         );
 
-        List<Notification> first = notificationService.processAndSaveNotifications(pdfA);
+        List<Notification> first = notificationService.processAndSaveNotifications(pdfA, userId);
         assertFalse(first.isEmpty(), "ilk belge kayit uretmeli");
 
-        List<Notification> second = notificationService.processAndSaveNotifications(pdfB);
+        List<Notification> second = notificationService.processAndSaveNotifications(pdfB, userId);
 
         assertFalse(second.isEmpty(), "FARKLI belge ayni satiri icerse bile atlanmamali: " + second);
         assertTrue(second.stream().anyMatch(n -> n.getTitle().startsWith("Tarih : 20.10.2025")),
@@ -103,10 +120,10 @@ class NotificationUploadIntegrationTest {
                 "Yer teslim tarihi 10.04.2025 olarak kararlastirilmistir.",
                 "Ilk hak edis 25.01.2026 tarihinde yapilacaktir."
         );
-        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf, userId);
         assertFalse(saved.isEmpty());
 
-        List<Notification> all = notificationService.findAll();
+        List<Notification> all = notificationService.findAll(userId);
 
         for (int i = 1; i < all.size(); i++) {
             LocalDate previous = all.get(i - 1).getDueDate();
@@ -122,9 +139,9 @@ class NotificationUploadIntegrationTest {
                 "Yer teslim tarihi 10.04.2025 olarak kararlastirilmistir.",
                 "Isin suresi yer tesliminden itibaren doksan gun olarak uygulanacaktir ve bu sure sonunda taraflar degerlendirme yapacaktir."
         );
-        Notification saved = notificationService.processAndSaveNotifications(pdf).get(0);
+        Notification saved = notificationService.processAndSaveNotifications(pdf, userId).get(0);
 
-        Notification updated = notificationService.update(saved.getId(),
+        Notification updated = notificationService.update(saved.getId(), userId,
                 new UpdateNotificationRequest(null, null, null, Status.COMPLETED));
 
         assertEquals(Status.COMPLETED, updated.getStatus(), "sadece status degismeli");
@@ -135,7 +152,7 @@ class NotificationUploadIntegrationTest {
     @Test
     void updateUnknownIdThrowsNotFound() {
         assertThrows(NotificationNotFoundException.class,
-                () -> notificationService.update(UUID.randomUUID(),
+                () -> notificationService.update(UUID.randomUUID(), userId,
                         new UpdateNotificationRequest(null, null, null, Status.COMPLETED)));
     }
 
@@ -145,10 +162,10 @@ class NotificationUploadIntegrationTest {
                 "Ceza tahakkuku 15.11.2025 tarihinde yapilir.",
                 "Gecikme cezasi gunluk yuzde sifir virgul bir oraninda uygulanacaktir ve tum cezalar hak edislerden kesilecektir."
         );
-        Notification saved = notificationService.processAndSaveNotifications(pdf).get(0);
+        Notification saved = notificationService.processAndSaveNotifications(pdf, userId).get(0);
         long before = notificationRepository.count();
 
-        notificationService.delete(saved.getId());
+        notificationService.delete(saved.getId(), userId);
 
         assertEquals(before - 1, notificationRepository.count());
         assertFalse(notificationRepository.existsById(saved.getId()));
@@ -157,7 +174,7 @@ class NotificationUploadIntegrationTest {
     @Test
     void deleteUnknownIdThrowsNotFound() {
         assertThrows(NotificationNotFoundException.class,
-                () -> notificationService.delete(UUID.randomUUID()));
+                () -> notificationService.delete(UUID.randomUUID(), userId));
     }
 
     @Test
@@ -166,7 +183,7 @@ class NotificationUploadIntegrationTest {
                 "Yakin tarih bildirimi 03.05.2026 tarihinde yapilacaktir.",
                 "Uzak tarih bildirimi 03.05.2027 tarihinde yapilacaktir ve bu sure icinde takip edilecektir."
         );
-        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf, userId);
         assertFalse(saved.isEmpty());
 
         // Uzak tarihli olani manuel yakin tarihe cek (test kararliligi icin)
@@ -175,10 +192,10 @@ class NotificationUploadIntegrationTest {
                 .findFirst()
                 .orElseThrow();
         LocalDate past = LocalDate.now().minusDays(1);
-        notificationService.update(far.getId(),
+        notificationService.update(far.getId(), userId,
                 new UpdateNotificationRequest(null, null, past, null));
 
-        List<Notification> upcoming = notificationService.findUpcoming(7);
+        List<Notification> upcoming = notificationService.findUpcoming(7, userId);
 
         assertTrue(upcoming.stream().anyMatch(n -> n.getDueDate().equals(past)),
                 "gecikmis bildirim gelmeli");
@@ -194,14 +211,14 @@ class NotificationUploadIntegrationTest {
                 "Ilk bildirim 15.11.2025 tarihinde yapilacaktir.",
                 "Ikinci bildirim 20.01.2026 tarihinde yapilacaktir ve takip edilecektir."
         );
-        List<Notification> saved = notificationService.processAndSaveNotifications(pdf);
+        List<Notification> saved = notificationService.processAndSaveNotifications(pdf, userId);
 
         // Ilk bildirimi gecmise cek, ikincisini COMPLETED yap
         Notification first = saved.get(0);
-        notificationService.update(first.getId(),
+        notificationService.update(first.getId(), userId,
                 new UpdateNotificationRequest(null, null, LocalDate.now().minusDays(2), null));
         Notification second = saved.get(1);
-        notificationService.update(second.getId(),
+        notificationService.update(second.getId(), userId,
                 new UpdateNotificationRequest(null, null, null, Status.COMPLETED));
 
         int marked = notificationService.markOverdue();
@@ -209,10 +226,10 @@ class NotificationUploadIntegrationTest {
         // Not: paylasilan DB'de baska gecikmis kayitlar da olabileceginden
         // kesin sayi yerine kendi test satirlarimizin davranisini dogrulariz.
         assertTrue(marked >= 1, "en az bizim gecikmis test satirimiz isaretlenmeli");
-        assertEquals(Status.DUE_DATE, notificationService.findAll().stream()
+        assertEquals(Status.DUE_DATE, notificationService.findAll(userId).stream()
                         .filter(n -> n.getId().equals(first.getId()))
                         .findFirst().orElseThrow().getStatus());
-        assertEquals(Status.COMPLETED, notificationService.findAll().stream()
+        assertEquals(Status.COMPLETED, notificationService.findAll(userId).stream()
                         .filter(n -> n.getId().equals(second.getId()))
                         .findFirst().orElseThrow().getStatus(),
                 "COMPLETED bildirime dokunulmamali");

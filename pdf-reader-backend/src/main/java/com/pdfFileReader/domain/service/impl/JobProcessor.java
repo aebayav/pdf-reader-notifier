@@ -69,8 +69,8 @@ public class JobProcessor {
         MultipartFile file = new ByteArrayMultipartFile(bytes, job.getFileName(), "application/pdf");
         try {
             List<Notification> result = job.isUseAi()
-                    ? geminiService.analyzeAndCreateNotifications(file)
-                    : notificationService.processAndSaveNotifications(file);
+                    ? geminiService.analyzeAndCreateNotifications(file, job.getUserId())
+                    : notificationService.processAndSaveNotifications(file, job.getUserId());
 
             job.setStatus(JobStatus.COMPLETED);
             job.setNotificationCount(result.size());

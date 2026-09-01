@@ -38,4 +38,8 @@ public class Notification {
     /** Kaynak belgenin icerik hash'i (mükerrer yükleme kontrolü için). */
     @Column(name = "source_hash", length = 64)
     private String sourceHash;
+
+    /** Bildirimin sahibi kullanici (veri izolasyonu). */
+    @Column(name = "user_id")
+    private UUID userId;
 }

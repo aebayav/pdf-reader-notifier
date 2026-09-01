@@ -1,5 +1,6 @@
 package com.pdfFileReader.controller;
 
+import com.pdfFileReader.auth.AuthFilter;
 import com.pdfFileReader.domain.dto.ContractAnalysisResponse;
 import com.pdfFileReader.domain.dto.ExtractedTextResponse;
 import com.pdfFileReader.domain.dto.UpdateNotificationRequest;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,8 +45,11 @@ public class NotificationController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<ProcessingJob> upload(@RequestParam("file") MultipartFile file) {
-        ProcessingJob job = jobService.enqueue(file, false);
+    public ResponseEntity<ProcessingJob> upload(
+            @RequestParam("file") MultipartFile file,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        ProcessingJob job = jobService.enqueue(file, false, userId);
 
         return ResponseEntity.accepted().body(job);
     }
@@ -64,45 +69,61 @@ public class NotificationController {
     }
 
     @PostMapping("/ai-upload")
-    public ResponseEntity<ProcessingJob> aiUpload(@RequestParam("file") MultipartFile file) {
-        ProcessingJob job = jobService.enqueue(file, true);
+    public ResponseEntity<ProcessingJob> aiUpload(
+            @RequestParam("file") MultipartFile file,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        ProcessingJob job = jobService.enqueue(file, true, userId);
 
         return ResponseEntity.accepted().body(job);
     }
 
     @GetMapping("/jobs/{id}")
-    public ResponseEntity<ProcessingJob> jobStatus(@PathVariable UUID id) {
-        return ResponseEntity.ok(jobService.getJob(id));
+    public ResponseEntity<ProcessingJob> jobStatus(
+            @PathVariable UUID id,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        return ResponseEntity.ok(jobService.getJob(id, userId));
     }
 
     @GetMapping("/jobs")
-    public ResponseEntity<List<ProcessingJob>> recentJobs(@RequestParam(defaultValue = "10") int limit) {
-        return ResponseEntity.ok(jobService.recentJobs(limit));
+    public ResponseEntity<List<ProcessingJob>> recentJobs(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        return ResponseEntity.ok(jobService.recentJobs(limit, userId));
     }
 
     @GetMapping("/upcoming")
     public ResponseEntity<List<Notification>> upcomingNotifications(
-            @RequestParam(defaultValue = "7") int days
+            @RequestParam(defaultValue = "7") int days,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
     ) {
-        return ResponseEntity.ok(notificationService.findUpcoming(days));
+        return ResponseEntity.ok(notificationService.findUpcoming(days, userId));
     }
 
     @GetMapping
-    public ResponseEntity<List<Notification>> listNotifications() {
-        return ResponseEntity.ok(notificationService.findAll());
+    public ResponseEntity<List<Notification>> listNotifications(
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        return ResponseEntity.ok(notificationService.findAll(userId));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Notification> updateNotification(
             @PathVariable UUID id,
-            @RequestBody UpdateNotificationRequest request
+            @RequestBody UpdateNotificationRequest request,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
     ) {
-        return ResponseEntity.ok(notificationService.update(id, request));
+        return ResponseEntity.ok(notificationService.update(id, userId, request));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteNotification(@PathVariable UUID id) {
-        notificationService.delete(id);
+    public ResponseEntity<Void> deleteNotification(
+            @PathVariable UUID id,
+            @RequestAttribute(AuthFilter.ATTR_USER_ID) UUID userId
+    ) {
+        notificationService.delete(id, userId);
 
         return ResponseEntity.noContent().build();
     }

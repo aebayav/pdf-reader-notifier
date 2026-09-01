@@ -42,7 +42,7 @@ public class NotificationScheduler {
 
         int marked = notificationService.markOverdue();
 
-        List<Notification> upcoming = notificationService.findUpcoming(daysAhead);
+        List<Notification> upcoming = notificationService.findUpcomingAllUsers(daysAhead);
         long overdueCount = upcoming.stream()
                 .filter(n -> n.getDueDate().isBefore(LocalDate.now()))
                 .count();

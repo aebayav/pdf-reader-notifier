@@ -3,20 +3,23 @@ package com.pdfFileReader.backend;
 import com.pdfFileReader.domain.entity.JobStatus;
 import com.pdfFileReader.domain.entity.Notification;
 import com.pdfFileReader.domain.entity.ProcessingJob;
+import com.pdfFileReader.domain.entity.User;
 import com.pdfFileReader.domain.service.impl.JobService;
 import com.pdfFileReader.repository.NotificationRepository;
 import com.pdfFileReader.repository.ProcessingJobRepository;
+import com.pdfFileReader.repository.UserRepository;
 import com.pdfFileReader.testutil.TestPdfFactory;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,6 +41,19 @@ class JobServiceIntegrationTest {
     @Autowired
     private NotificationRepository notificationRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    private User user;
+
+    @BeforeEach
+    void createTestUser() {
+        user = new User();
+        user.setUsername("job-test-" + System.currentTimeMillis());
+        user.setPasswordHash("x");
+        userRepository.save(user);
+    }
+
     @AfterEach
     void cleanup() {
         List<Notification> leftovers = notificationRepository.findAll().stream()
@@ -46,6 +62,10 @@ class JobServiceIntegrationTest {
         if (!leftovers.isEmpty()) {
             notificationRepository.deleteAll(leftovers);
         }
+        jobRepository.findAll().stream()
+                .filter(j -> user.getId().equals(j.getUserId()))
+                .forEach(j -> jobRepository.deleteById(j.getId()));
+        userRepository.deleteById(user.getId());
     }
 
     private boolean containsMarker(Notification n) {
@@ -60,7 +80,7 @@ class JobServiceIntegrationTest {
                 "Bu evrak asenkron kuyruk akisini dogrulamak icin gonderilmistir."
         );
 
-        ProcessingJob job = jobService.enqueue(pdf, false);
+        ProcessingJob job = jobService.enqueue(pdf, false, user.getId());
 
         assertEquals(JobStatus.QUEUED, job.getStatus(), "enqueue aninda QUEUED donmeli");
 

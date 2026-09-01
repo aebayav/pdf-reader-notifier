@@ -181,15 +181,16 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public List<Notification> processAndSaveNotifications(MultipartFile file) {
+    public List<Notification> processAndSaveNotifications(MultipartFile file, UUID userId) {
         ExtractedTextResult extractedText = extractReadableText(file);
 
-        // Belge bazli mükerrer kontrolu: ayni icerik hash'i daha once islendiyse
-        // hicbir not tekrar eklenmez (satir/etiket bazli kontrol farkli
-        // sozlesmelerdeki ayni satirlari yanlislikla atlardi).
+        // Belge bazli mükerrer kontrolu KULLANICI BAZINDA: ayni kullanici ayni
+        // icerik hash'ine sahip belgeyi daha once islediyse notlar atlanir;
+        // farkli kullanicilar ayni belgeyi bagimsiz isler.
         String sourceHash = HashUtil.sha256Hex(extractedText.text());
-        if (notificationRepository.existsBySourceHash(sourceHash)) {
-            log.info("Bu belge daha once islenmis, atlandi: {}", file.getOriginalFilename());
+        if (notificationRepository.existsBySourceHashAndUserId(sourceHash, userId)) {
+            log.info("Bu belge bu kullanici tarafindan daha once islenmis, atlandi: {}",
+                    file.getOriginalFilename());
             return List.of();
         }
 
@@ -201,6 +202,7 @@ public class NotificationServiceImpl implements NotificationService {
 
         for (Notification notification : notifications) {
             notification.setSourceHash(sourceHash);
+            notification.setUserId(userId);
         }
 
         return notificationRepository.saveAll(notifications);
@@ -765,13 +767,13 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public List<Notification> findAll() {
-        return notificationRepository.findAll(Sort.by(Sort.Direction.ASC, "dueDate"));
+    public List<Notification> findAll(UUID userId) {
+        return notificationRepository.findAllByUserIdOrderByDueDateAsc(userId);
     }
 
     @Override
-    public Notification update(UUID id, UpdateNotificationRequest request) {
-        Notification notification = notificationRepository.findById(id)
+    public Notification update(UUID id, UUID userId, UpdateNotificationRequest request) {
+        Notification notification = notificationRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new NotificationNotFoundException(id));
 
         if (request.title() != null && !request.title().isBlank()) {
@@ -792,8 +794,8 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public void delete(UUID id) {
-        if (!notificationRepository.existsById(id)) {
+    public void delete(UUID id, UUID userId) {
+        if (!notificationRepository.existsByIdAndUserId(id, userId)) {
             throw new NotificationNotFoundException(id);
         }
 
@@ -802,7 +804,19 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public List<Notification> findUpcoming(int days) {
+    public List<Notification> findUpcoming(int days, UUID userId) {
+        LocalDate today = LocalDate.now();
+        LocalDate horizon = today.plusDays(Math.max(days, 0));
+
+        return notificationRepository.findAllByUserIdOrderByDueDateAsc(userId).stream()
+                .filter(n -> n.getDueDate() != null)
+                .filter(n -> n.getStatus() != Status.COMPLETED && n.getStatus() != Status.CLOSED)
+                .filter(n -> !n.getDueDate().isAfter(horizon))
+                .toList();
+    }
+
+    @Override
+    public List<Notification> findUpcomingAllUsers(int days) {
         LocalDate today = LocalDate.now();
         LocalDate horizon = today.plusDays(Math.max(days, 0));
 

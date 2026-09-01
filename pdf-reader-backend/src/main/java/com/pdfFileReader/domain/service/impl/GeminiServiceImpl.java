@@ -31,6 +31,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class GeminiServiceImpl implements GeminiService {
@@ -74,7 +75,7 @@ public class GeminiServiceImpl implements GeminiService {
     }
 
     @Override
-    public List<Notification> analyzeAndCreateNotifications(MultipartFile file) {
+    public List<Notification> analyzeAndCreateNotifications(MultipartFile file, UUID userId) {
         String resolvedKey = resolveApiKey();
         if (resolvedKey.isEmpty()) {
             throw new GeminiException(
@@ -85,8 +86,9 @@ public class GeminiServiceImpl implements GeminiService {
         String text = notificationService.extractText(file);
         String sourceHash = HashUtil.sha256Hex(text);
 
-        if (notificationRepository.existsBySourceHash(sourceHash)) {
-            log.info("Bu belge daha once AI ile islenmis, atlandi: {}", file.getOriginalFilename());
+        if (notificationRepository.existsBySourceHashAndUserId(sourceHash, userId)) {
+            log.info("Bu belge bu kullanici tarafindan daha once AI ile islenmis, atlandi: {}",
+                    file.getOriginalFilename());
             return List.of();
         }
 
@@ -102,6 +104,7 @@ public class GeminiServiceImpl implements GeminiService {
 
         for (Notification notification : notifications) {
             notification.setSourceHash(sourceHash);
+            notification.setUserId(userId);
         }
 
         return notificationRepository.saveAll(notifications);
