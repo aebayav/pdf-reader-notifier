@@ -13,6 +13,7 @@ import {
   deleteNotification,
   isLoggedIn,
   clearSession,
+  ApiError,
   Notification,
   ProcessingJob,
   UpdateNotificationPayload,
@@ -56,18 +57,27 @@ function App() {
       setNotifications(all)
       setUpcoming(near)
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearSession()
+        setLoggedIn(false)
+        return
+      }
       setError(err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.")
     }
   }
 
   useEffect(() => {
+    if (!loggedIn) {
+      return
+    }
     reload()
     return () => {
       if (pollRef.current !== null) {
         window.clearInterval(pollRef.current)
       }
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedIn])
 
   const handleUpload = async (file: File) => {
     setLoading(true)
