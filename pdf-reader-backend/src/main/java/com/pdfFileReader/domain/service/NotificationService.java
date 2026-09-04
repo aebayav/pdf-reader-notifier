@@ -11,6 +11,10 @@ import java.util.UUID;
 public interface NotificationService {
     String extractText(MultipartFile file);
     List<Notification> processAndSaveNotifications(MultipartFile file, UUID userId);
+
+    List<Notification> processAndSaveNotifications(MultipartFile file, UUID userId, UUID groupId);
+
+    void saveGroup(List<Notification> notifications);
     ContractAnalysisResponse analyzeContract(MultipartFile file);
 
     /** Kullanicinin tum bildirimlerini son tarihe gore artan sirada dondurur. */

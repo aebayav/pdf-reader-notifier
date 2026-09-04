@@ -1,5 +1,6 @@
 package com.pdfFileReader.domain.service.impl;
 
+import com.pdfFileReader.auth.LoginAttemptService;
 import com.pdfFileReader.domain.entity.AuthToken;
 import com.pdfFileReader.domain.entity.User;
 import com.pdfFileReader.exception.AuthException;
@@ -28,21 +29,24 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final AuthTokenRepository tokenRepository;
+    private final LoginAttemptService loginAttemptService;
     private final int tokenTtlDays;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(
             UserRepository userRepository,
             AuthTokenRepository tokenRepository,
+            LoginAttemptService loginAttemptService,
             @Value("${app.auth.token-ttl-days:30}") int tokenTtlDays
     ) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
+        this.loginAttemptService = loginAttemptService;
         this.tokenTtlDays = tokenTtlDays;
     }
 
     @Transactional
-    public AuthToken register(String username, String password) {
+    public AuthToken register(String username, String password, String email) {
         String name = normalize(username);
         validatePassword(password);
 
@@ -53,8 +57,13 @@ public class AuthService {
         User user = new User();
         user.setUsername(name);
         user.setPasswordHash(PasswordHasher.hash(password));
-        userRepository.save(user);
 
+        // E-posta opsiyonel; bos string geldiyse null yaz
+        if (email != null && !email.isBlank()) {
+            user.setEmail(email.trim().toLowerCase());
+        }
+
+        userRepository.save(user);
         log.info("Yeni kullanici kaydedildi: {}", name);
         return issueToken(user);
     }
@@ -63,13 +72,22 @@ public class AuthService {
     public AuthToken login(String username, String password) {
         String name = normalize(username);
 
-        User user = userRepository.findByUsername(name)
-                .orElseThrow(() -> new AuthException("Kullanici adi veya parola hatali."));
+        // Brute-force koruması
+        if (loginAttemptService.isBlocked(name)) {
+            long remaining = loginAttemptService.remainingLockSeconds(name);
+            throw new AuthException(
+                    "Cok fazla basarisiz giris denemesi. Lutfen " + remaining + " saniye bekleyin.");
+        }
 
-        if (!PasswordHasher.verify(password, user.getPasswordHash())) {
+        User user = userRepository.findByUsername(name).orElse(null);
+
+        if (user == null || !PasswordHasher.verify(password, user.getPasswordHash())) {
+            loginAttemptService.recordFailure(name);
+            // Hangi alan yanlis oldugunu belirtmeyiz (timing/enumeration onleme)
             throw new AuthException("Kullanici adi veya parola hatali.");
         }
 
+        loginAttemptService.recordSuccess(name);
         log.info("Kullanici giris yapti: {}", name);
         return issueToken(user);
     }

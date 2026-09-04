@@ -66,4 +66,7 @@ public class ProcessingJob {
     /** Isi gonderen kullanici (isler de kullaniciya ozeldir). */
     @Column(name = "user_id")
     private UUID userId;
+
+    @Column(name = "group_id")
+    private UUID groupId;
 }

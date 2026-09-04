@@ -182,6 +182,11 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public List<Notification> processAndSaveNotifications(MultipartFile file, UUID userId) {
+        return processAndSaveNotifications(file, userId, null);
+    }
+
+    @Override
+    public List<Notification> processAndSaveNotifications(MultipartFile file, UUID userId, UUID groupId) {
         ExtractedTextResult extractedText = extractReadableText(file);
 
         // Belge bazli mükerrer kontrolu KULLANICI BAZINDA: ayni kullanici ayni
@@ -203,9 +208,15 @@ public class NotificationServiceImpl implements NotificationService {
         for (Notification notification : notifications) {
             notification.setSourceHash(sourceHash);
             notification.setUserId(userId);
+            notification.setGroupId(groupId);
         }
 
         return notificationRepository.saveAll(notifications);
+    }
+
+    @Override
+    public void saveGroup(List<Notification> notifications) {
+        notificationRepository.saveAll(notifications);
     }
 
     @Override

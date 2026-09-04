@@ -42,4 +42,12 @@ public class Notification {
     /** Bildirimin sahibi kullanici (veri izolasyonu). */
     @Column(name = "user_id")
     private UUID userId;
+
+    /** Kullanici tarafindan secilen grup; null eski/gruplandirilmamis kayitlar icindir. */
+    @Column(name = "group_id")
+    private UUID groupId;
+
+    /** Bildirimin geldigi PDF dosyasinin uzantisiz adi. */
+    @Column(name = "contract_name", length = 255)
+    private String contractName;
 }

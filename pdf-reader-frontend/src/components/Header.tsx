@@ -4,12 +4,15 @@ interface HeaderProps {
 
 const Header = ({ onLogout }: HeaderProps) => {
   return (
-    <div className="header-row">
-      <h1 className="header-title">PDF okuma ve notify sistemi</h1>
+    <header className="header-row">
+      <div className="header-brand">
+        <span className="header-icon" aria-hidden="true">📄</span>
+        <h1 className="header-title">PDF Reader Notifier</h1>
+      </div>
       <button className="header-logout" type="button" onClick={onLogout}>
-        Çıkış Yap
+        <span aria-hidden="true">→</span> Çıkış Yap
       </button>
-    </div>
+    </header>
   )
 }
 

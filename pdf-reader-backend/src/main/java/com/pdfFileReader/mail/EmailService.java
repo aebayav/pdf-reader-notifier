@@ -1,6 +1,7 @@
 package com.pdfFileReader.mail;
 
 import com.pdfFileReader.domain.entity.Notification;
+import com.pdfFileReader.domain.entity.User;
 import com.pdfFileReader.util.EnvReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,9 @@ import java.util.Properties;
  * Bildirimleri e-posta ile gonderir. SMTP ayarlari ortam degiskenlerinden
  * veya .env dosyasindan (EnvReader) gelir; yapilandirilmamissa sessizce
  * atlar. JavaMailSender'i kendisi kurar - baslatma yonteminden bagimsizdir.
+ *
+ * Kullanici bazli gonderim: kullanicinin kayitli e-postasi varsa o adrese,
+ * yoksa MAIL_TO fallback adresine gonderilir.
  */
 @Service
 public class EmailService {
@@ -29,7 +33,7 @@ public class EmailService {
 
     private final boolean enabled;
     private final String fromConfig;
-    private final String toConfig;
+    private final String fallbackTo;
     private final MailCredentials fixedCredentials;
 
     private volatile JavaMailSender cachedSender;
@@ -47,7 +51,7 @@ public class EmailService {
     EmailService(boolean enabled, String from, String to, MailCredentials credentials) {
         this.enabled = enabled;
         this.fromConfig = from;
-        this.toConfig = to;
+        this.fallbackTo = to;
         this.fixedCredentials = credentials;
     }
 
@@ -88,8 +92,8 @@ public class EmailService {
         return EnvReader.or(fromConfig, "MAIL_FROM");
     }
 
-    String resolvedTo() {
-        return EnvReader.or(toConfig, "MAIL_TO");
+    String resolvedFallbackTo() {
+        return EnvReader.or(fallbackTo, "MAIL_TO");
     }
 
     boolean isConfigured() {
@@ -97,8 +101,7 @@ public class EmailService {
                 && !resolvedHost().isBlank()
                 && !resolvedUsername().isBlank()
                 && !resolvedPassword().isBlank()
-                && !resolvedFrom().isBlank()
-                && !resolvedTo().isBlank();
+                && !resolvedFrom().isBlank();
     }
 
     private JavaMailSender sender() {
@@ -125,9 +128,72 @@ public class EmailService {
         return cachedSender;
     }
 
-    public void sendDailySummary(List<Notification> upcoming, int newlyMarked) {
+    /**
+     * Kullaniciya ozel ozet e-postasi gonderir. Kullanicinin kayitli
+     * e-postasi yoksa fallback (MAIL_TO) adresine gonderilir. Her ikisi
+     * de bos ise gonderilmez.
+     */
+    public void sendDailySummaryToUser(User user, List<Notification> upcoming, int newlyMarked) {
         if (!isConfigured()) {
-            log.info("SMTP yapilandirilmadigi icin eposta bildirimi atlandi (.env: MAIL_HOST/MAIL_USERNAME/MAIL_PASSWORD/MAIL_FROM/MAIL_TO)");
+            log.info("SMTP yapilandirilmadigi icin eposta bildirimi atlandi (.env: MAIL_HOST/MAIL_USERNAME/MAIL_PASSWORD/MAIL_FROM)");
+            return;
+        }
+
+        String recipient = resolveRecipient(user);
+        if (recipient.isBlank()) {
+            log.info("Kullanici icin e-posta adresi bulunamadi, atlandi: {}", user.getUsername());
+            return;
+        }
+
+        if (upcoming.isEmpty() && newlyMarked == 0) {
+            return;
+        }
+
+        LocalDate today = LocalDate.now();
+        long overdue = upcoming.stream()
+                .filter(n -> n.getDueDate() != null && n.getDueDate().isBefore(today))
+                .count();
+        long soon = upcoming.size() - overdue;
+
+        StringBuilder body = new StringBuilder();
+        body.append("PDF Reader Notifier - Gunluk Bildirim Ozeti (").append(user.getUsername()).append(")\n")
+                .append("-----------------------------------------\n\n")
+                .append(soon).append(" bildirim yaklasiyor, ")
+                .append(overdue).append(" gecikmis");
+
+        if (newlyMarked > 0) {
+            body.append(" (").append(newlyMarked).append(" yeni gecikme isaretlendi)");
+        }
+        body.append(".\n\n");
+
+        for (Notification notification : upcoming) {
+            long daysLeft = ChronoUnit.DAYS.between(today, notification.getDueDate());
+            body.append(daysLeft < 0 ? String.format("- [GECTI %d gun] ", -daysLeft)
+                            : daysLeft == 0 ? "- [BUGUN] "
+                            : String.format("- [%d gun kaldi] ", daysLeft))
+                    .append(notification.getTitle())
+                    .append(" (Son Tarih: ")
+                    .append(notification.getDueDate())
+                    .append(")\n");
+        }
+
+        body.append("\nTum bildirimler icin uygulamaya goz atabilirsiniz.\n");
+
+        send(recipient,
+                "PDF Reader Notifier: " + soon + " yaklasan, " + overdue + " gecikmis",
+                body.toString());
+    }
+
+    /**
+     * Toplu (eski uyumluluk) ozet – hala kullanilabilir; MAIL_TO adresine gider.
+     *
+     * @deprecated Kullanici bazli {@link #sendDailySummaryToUser} tercih edilmeli.
+     */
+    @Deprecated
+    public void sendDailySummary(List<Notification> upcoming, int newlyMarked) {
+        String recipient = resolvedFallbackTo();
+        if (!isConfigured() || recipient.isBlank()) {
+            log.info("SMTP veya MAIL_TO yapilandirilmadigi icin toplu eposta atlandi.");
             return;
         }
 
@@ -166,7 +232,9 @@ public class EmailService {
 
         body.append("\nTum bildirimler icin uygulamaya goz atabilirsiniz.\n");
 
-        send("PDF Reader Notifier: " + soon + " yaklasan, " + overdue + " gecikmis", body.toString());
+        send(recipient,
+                "PDF Reader Notifier: " + soon + " yaklasan, " + overdue + " gecikmis",
+                body.toString());
     }
 
     public void sendTestMail() {
@@ -176,7 +244,13 @@ public class EmailService {
                             + "MAIL_FROM ve MAIL_TO degerlerini ekleyip backend'i yeniden baslatin.");
         }
 
-        boolean sent = send("PDF Reader Notifier: SMTP testi basarili", "SMTP ayarlari calisiyor. Iyi takipler!");
+        String recipient = resolvedFallbackTo();
+        if (recipient.isBlank()) {
+            throw new IllegalStateException("MAIL_TO adresi ayarlanmamis.");
+        }
+
+        boolean sent = send(recipient, "PDF Reader Notifier: SMTP testi basarili",
+                "SMTP ayarlari calisiyor. Iyi takipler!");
 
         if (!sent) {
             throw new IllegalStateException(
@@ -186,19 +260,29 @@ public class EmailService {
     }
 
     /** Gonderim basariliysa true doner; MailException loglanip yutulur. */
-    private boolean send(String subject, String text) {
+    private boolean send(String to, String subject, String text) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(resolvedFrom());
-            message.setTo(resolvedTo());
+            message.setTo(to);
             message.setSubject(subject);
             message.setText(text);
             sender().send(message);
-            log.info("Eposta gonderildi: '{}' -> {}", subject, resolvedTo());
+            log.info("Eposta gonderildi: '{}' -> {}", subject, to);
             return true;
         } catch (MailException | NumberFormatException e) {
             log.error("Eposta gonderilemedi: {}", e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Kullanicinin kendi e-postasını tercih eder; yoksa fallback MAIL_TO adresi.
+     */
+    private String resolveRecipient(User user) {
+        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+            return user.getEmail();
+        }
+        return resolvedFallbackTo();
     }
 }

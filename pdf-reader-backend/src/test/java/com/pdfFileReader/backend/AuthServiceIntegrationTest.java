@@ -47,7 +47,7 @@ class AuthServiceIntegrationTest {
 
     @Test
     void registerLoginAndValidateRoundTrip() {
-        AuthToken registered = authService.register(PREFIX, "guclu-parola");
+        AuthToken registered = authService.register(PREFIX, "guclu-parola", null);
 
         assertTrue(authService.validate(registered.getToken()).isPresent(), "kayit token'i gecerli olmali");
 
@@ -60,21 +60,21 @@ class AuthServiceIntegrationTest {
 
     @Test
     void wrongPasswordRejected() {
-        authService.register(PREFIX, "dogru-parola");
+        authService.register(PREFIX, "dogru-parola", null);
 
         assertThrows(AuthException.class, () -> authService.login(PREFIX, "yanlis-parola"));
     }
 
     @Test
     void duplicateUsernameRejected() {
-        authService.register(PREFIX, "parola-1");
+        authService.register(PREFIX, "parola-1", null);
 
-        assertThrows(AuthException.class, () -> authService.register(PREFIX, "parola-2"));
+        assertThrows(AuthException.class, () -> authService.register(PREFIX, "parola-2", null));
     }
 
     @Test
     void shortPasswordRejected() {
-        assertThrows(AuthException.class, () -> authService.register(PREFIX, "123"));
+        assertThrows(AuthException.class, () -> authService.register(PREFIX, "123", null));
     }
 
     @Test
@@ -82,3 +82,4 @@ class AuthServiceIntegrationTest {
         assertTrue(authService.validate("olmayan-token").isEmpty());
     }
 }
+

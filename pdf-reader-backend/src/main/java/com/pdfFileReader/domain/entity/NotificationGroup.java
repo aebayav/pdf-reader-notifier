@@ -16,32 +16,27 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Table(name = "app_users")
+@Entity
+@Table(name = "notification_groups")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-@Entity
-public class User {
+public class NotificationGroup {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 64)
-    private String username;
+    @Column(nullable = false, length = 100)
+    private String name;
 
-    @Column(name = "password_hash", nullable = false, length = 512)
-    private String passwordHash;
+    @Column(name = "user_id", nullable = false)
+    private UUID userId;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    /** E-posta adresi (opsiyonel); bildirim ozetleri bu adrese gonderilir. */
-    @Column(name = "email", length = 255, unique = true)
-    private String email;
 }
-

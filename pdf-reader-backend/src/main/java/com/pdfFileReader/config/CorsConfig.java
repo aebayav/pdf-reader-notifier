@@ -29,7 +29,12 @@ public class CorsConfig {
             String[] allowedOrigins
     ) {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        config.setAllowedOriginPatterns(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "http://localhost",
+                "http://127.0.0.1"
+        ));
         if (allowedOrigins.length > 0 && !allowedOrigins[0].isBlank()) {
             config.setAllowedOrigins(List.of(allowedOrigins));
         }

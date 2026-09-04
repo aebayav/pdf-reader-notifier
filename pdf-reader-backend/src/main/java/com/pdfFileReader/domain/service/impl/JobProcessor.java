@@ -70,7 +70,14 @@ public class JobProcessor {
         try {
             List<Notification> result = job.isUseAi()
                     ? geminiService.analyzeAndCreateNotifications(file, job.getUserId())
-                    : notificationService.processAndSaveNotifications(file, job.getUserId());
+                    : notificationService.processAndSaveNotifications(file, job.getUserId(), job.getGroupId());
+
+            result.forEach(notification -> {
+                notification.setGroupId(job.getGroupId());
+                notification.setContractName(contractName(job.getFileName()));
+            });
+            // Her iki servis de bildirimleri kaydeder; burada grup ve sozlesme adi kalici hale getirilir.
+            notificationService.saveGroup(result);
 
             job.setStatus(JobStatus.COMPLETED);
             job.setNotificationCount(result.size());
@@ -88,5 +95,13 @@ public class JobProcessor {
         job.setErrorMessage(message != null && message.length() > 500 ? message.substring(0, 500) : message);
         job.setCompletedAt(LocalDateTime.now());
         jobRepository.save(job);
+    }
+
+    private String contractName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "Bilinmeyen sozlesme";
+        }
+        String name = fileName.replaceFirst("(?i)\\.pdf$", "").trim();
+        return name.isBlank() ? "Bilinmeyen sozlesme" : name;
     }
 }

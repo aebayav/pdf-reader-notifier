@@ -4,6 +4,7 @@ import com.pdfFileReader.domain.entity.AuthToken;
 import com.pdfFileReader.domain.service.impl.AuthService;
 import com.pdfFileReader.dto.AuthRequest;
 import com.pdfFileReader.dto.AuthResponse;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,15 +23,15 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody AuthRequest request) {
-        AuthToken token = authService.register(request.username(), request.password());
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody AuthRequest request) {
+        AuthToken token = authService.register(request.username(), request.password(), request.email());
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new AuthResponse(token.getToken(), token.getUserId().toString()));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody AuthRequest request) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         AuthToken token = authService.login(request.username(), request.password());
 
         return ResponseEntity.ok(new AuthResponse(token.getToken(), token.getUserId().toString()));

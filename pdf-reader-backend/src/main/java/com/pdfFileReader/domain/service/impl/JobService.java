@@ -35,6 +35,10 @@ public class JobService implements ApplicationRunner {
 
     /** Evrak'i kuyruga alir, aninda doner (agir islem arka planda). */
     public ProcessingJob enqueue(MultipartFile file, boolean useAi, UUID userId) {
+        return enqueue(file, useAi, userId, null);
+    }
+
+    public ProcessingJob enqueue(MultipartFile file, boolean useAi, UUID userId, UUID groupId) {
         try {
             byte[] bytes = file.getBytes();
 
@@ -43,6 +47,7 @@ public class JobService implements ApplicationRunner {
             job.setFileName(file.getOriginalFilename() != null ? file.getOriginalFilename() : "bilinmeyen.pdf");
             job.setUseAi(useAi);
             job.setUserId(userId);
+            job.setGroupId(groupId);
             job.setSubmittedAt(LocalDateTime.now());
 
             job = jobRepository.save(job);

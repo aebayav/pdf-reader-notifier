@@ -17,6 +17,9 @@ import {
   Notification,
   ProcessingJob,
   UpdateNotificationPayload,
+  NotificationGroup,
+  fetchGroups,
+  createGroup,
 } from "./api"
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -34,6 +37,8 @@ function App() {
   const [job, setJob] = useState<ProcessingJob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [useAi, setUseAi] = useState(true)
+  const [groups, setGroups] = useState<NotificationGroup[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState("")
   const pollRef = useRef<number | null>(null)
 
   const handleLogout = () => {
@@ -50,12 +55,14 @@ function App() {
 
   const reload = async () => {
     try {
-      const [all, near] = await Promise.all([
+      const [all, near, loadedGroups] = await Promise.all([
         fetchNotifications(),
         fetchUpcoming(7),
+        fetchGroups(),
       ])
       setNotifications(all)
       setUpcoming(near)
+      setGroups(loadedGroups)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         clearSession()
@@ -83,7 +90,7 @@ function App() {
     setLoading(true)
     setError(null)
     try {
-      const created = await uploadPdf(file, useAi)
+      const created = await uploadPdf(file, useAi, selectedGroupId || undefined)
       setJob(created)
 
       pollRef.current = window.setInterval(async () => {
@@ -150,14 +157,34 @@ function App() {
     )
   }
 
+  const handleCreateGroup = async () => {
+    const name = window.prompt("Grup adı")?.trim()
+    if (!name) return
+    try {
+      const group = await createGroup(name)
+      setGroups((current) => [...current, group])
+      setSelectedGroupId(group.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Grup oluşturulamadı.")
+    }
+  }
+
   return (
     <>
       <Header onLogout={handleLogout} />
+      <div className="group-toolbar">
+        <span>Gruplar</span>
+        {groups.map((group) => <button key={group.id} type="button" className={selectedGroupId === group.id ? "active" : ""} onClick={() => setSelectedGroupId(group.id)}>{group.name}</button>)}
+        <button type="button" onClick={handleCreateGroup}>+ Yeni grup</button>
+      </div>
       <FileUploader
         onUpload={handleUpload}
         loading={loading}
         useAi={useAi}
         onAiChange={setUseAi}
+        groups={groups}
+        selectedGroupId={selectedGroupId}
+        onGroupChange={setSelectedGroupId}
       />
       {job && (
         <p className={`job-status job-${job.status.toLowerCase()}`} role="status" aria-live="polite">
@@ -170,6 +197,7 @@ function App() {
       <UpcomingBanner upcoming={upcoming} />
       <CardGallery
         notifications={notifications}
+        groups={groups}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
       />

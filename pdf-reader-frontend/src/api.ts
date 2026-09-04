@@ -1,4 +1,6 @@
-export const API_BASE_URL = "http://localhost:8080";
+export const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8080";
+
 
 export type NotificationStatus = "COMPLETED" | "IN_PROGRESS" | "DUE_DATE" | "CLOSED";
 export type JobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
@@ -10,6 +12,13 @@ export interface Notification {
   dueDate?: string | null; // "YYYY-MM-DD"
   createDate?: string | null; // "YYYY-MM-DD"
   status: NotificationStatus;
+  groupId?: string | null;
+  contractName?: string | null;
+}
+
+export interface NotificationGroup {
+  id: string;
+  name: string;
 }
 
 export interface ProcessingJob {
@@ -96,11 +105,11 @@ function authHeaders(): Record<string, string> {
 /* Auth                                                                 */
 /* ------------------------------------------------------------------ */
 
-export async function register(username: string, password: string): Promise<AuthResponse> {
+export async function register(username: string, password: string, email?: string): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, email: email || undefined }),
   });
 
   if (!response.ok) {
@@ -109,6 +118,7 @@ export async function register(username: string, password: string): Promise<Auth
 
   return response.json();
 }
+
 
 export async function login(username: string, password: string): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
@@ -127,6 +137,24 @@ export async function login(username: string, password: string): Promise<AuthRes
 /* ------------------------------------------------------------------ */
 /* Bildirimler + isler (hepsi token ister)                             */
 /* ------------------------------------------------------------------ */
+
+export async function fetchGroups(): Promise<NotificationGroup[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/groups`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) return parseError(response);
+  return response.json();
+}
+
+export async function createGroup(name: string): Promise<NotificationGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/notifications/groups`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) return parseError(response);
+  return response.json();
+}
 
 export async function fetchNotifications(): Promise<Notification[]> {
   const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
@@ -153,9 +181,10 @@ export async function fetchUpcoming(days: number = 7): Promise<Notification[]> {
   return response.json();
 }
 
-export async function uploadPdf(file: File, useAi: boolean = false): Promise<ProcessingJob> {
+export async function uploadPdf(file: File, useAi: boolean = false, groupId?: string): Promise<ProcessingJob> {
   const formData = new FormData();
   formData.append("file", file);
+  if (groupId) formData.append("groupId", groupId);
 
   const endpoint = useAi
     ? `${API_BASE_URL}/api/v1/notifications/ai-upload`
